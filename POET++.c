@@ -1,7 +1,7 @@
 /*H**********************************************************************
  * FILENAME : SGX1.c
  * ORGANIZATION : ISPM Research Lab
- *Description: Maximum Node 100, Anything with start from time=0,
+ * DESCRIPTION: Maximum Node 100, Anything with start from time=0,
  *H*/
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,11 +9,28 @@
 #include <ctype.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
+
+//change this to NDEBUG if don't want to check assertions <assert(...)>
+#define DEBUG
 
 #include "queue.h"
 
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
 
-int nodes[10000][4], n, i, nodes_queue[100000], taem = 0, q = 0, x, elapsed_time[10000], tym = 0, ct, upsgx, maxat, tiercount, tierdiv;
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+
+/*********************************************************************/
+
+//TODO: change nodes variable into a list of structs for each node
+
+uint nodes[10000][4], n, i, nodes_queue[100000], taem = 0, q = 0, x, elapsed_time[10000], tym = 0, ct, upsgx, maxat, tiercount, tierdiv;
 float QTT[10000], sumT[10000], ncT[10000], wait_times[10000];
 
 typedef struct linkedList {
@@ -23,37 +40,41 @@ typedef struct linkedList {
 
 Q * queue = NULL; /*At Initial stage there nothing in the queue */
 
-void get_input_from_user(int show_prompt) {
-    //int x; //Arrival time
+uint randint(int start, int end) {
+    assert(start<=end);
+    start = max(0, min(start, RAND_MAX));
+    end = max(0, min(end, RAND_MAX));
 
-    srand(time(NULL));
-    if (show_prompt) printf("Total Number of nodes in the network:");
+    return start + rand() % end;
+}
+
+void get_input_from_user(int show_prompt) {
+    if (show_prompt) printf("Seed for pseudo-random number generator (-1 to set it automatically): ");
+    uint seed;
+    scanf("%u", &seed);
+    seed = seed < 0 ? max(0,seed) : (uint) time(NULL);
+    srand(seed);
+
+    if (show_prompt) printf("Number of nodes in the network: ");
     scanf("%d",&n);
 
-    if (show_prompt) printf("Enter the upper bound of SGXtime:");
+    if (show_prompt) printf("SGXtime upper bound: ");
     scanf("%d",&upsgx);
 
-    if (show_prompt) printf("Enter the split for tiers:");
+    if (show_prompt) printf("Split for tiers: ");
     scanf("%d",&tierdiv);
 
-    if (show_prompt) printf("Enter the maximum time for Arrival Time:");
+    if (show_prompt) printf("Arrival maximum time: ");
     scanf("%d",&maxat);
     for (i = 0; i < n; i++) {
-        int b = 1 + rand() % upsgx;
-        int a = rand() % 10;
-	int at = rand() % maxat; // arrival time is randomly generated
-        nodes[i][0]=at;
+        int b = randint(1, upsgx);
+        int a = randint(0, 10);
+	    int at = randint(0, maxat); // arrival time is randomly generated
+        nodes[i][0] = at;
         nodes[i][1] = b;
         nodes[i][2] = 0;
         nodes[i][3] = nodes[i][1];
     }
-
-    /*Calculate Average of SGX time */
-    // for(nodes[i][2]=0;nodes[i][2]<n;nodes[i][2]++)
-    //    scanf("%d",&nodes[i][2]);
-    // for (nodes[i][2]=0;nodes[i][2]<n;nodes[i][2]++)
-    //   add_SGX=add_SGX+nodes[i][2];
-    //if (show_prompt) printf("Sum:%d",add_SGX);
 
     float uval = (float) upsgx;
     float tval = (float) tierdiv;
@@ -61,9 +82,9 @@ void get_input_from_user(int show_prompt) {
 }
 
 void simulate_poet() {
-    printf("\n\nPass: Arrivaltime SGXtime #Leader timeLeft");
+    printf("Pass     :\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (i = 0; i < n; i++) {
-        printf("\n[Node%d]: %5d %5d %5d %5d\n", i, nodes[i][0], nodes[i][1], nodes[i][2], nodes[i][3]);
+        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n", i, nodes[i][0], nodes[i][1], nodes[i][2], nodes[i][3]);
     }
     // printf("\nNext Node:");
     Q * queue = NULL;
@@ -240,7 +261,7 @@ void waiting_time() {
 
         for (t = taem - 1; nodes_queue[t] != i; t--);
         releasetime = t + 1;
-        wait_times[i] = releasetime - nodes[i][0] - nodes[i][1];
+        wait_times[i] = (float) releasetime - nodes[i][0] - nodes[i][1];
     }
 }
 
