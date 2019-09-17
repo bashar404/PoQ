@@ -12,7 +12,7 @@
 #include <time.h>
 
 
-int nodes[10000][4], n, i, queue[100000], WT[10000], taem = 0, n, q = 0, x, ET[10000], tym = 0, ct,upsgx,maxat,tiercount,tierdiv;
+int nodes[10000][4], n, i, queue[100000], WT[10000], taem = 0, q = 0, x, ET[10000], tym = 0, ct,upsgx,maxat,tiercount,tierdiv;
 float add_SGX = 0.0, QT, QT2, QT3, QT4, sum, sum2, sum3, sum4, nc, nc2, nc3, nc4;
 float QTT[10000], sumT[10000], ncT[10000];
 
@@ -21,34 +21,34 @@ typedef struct linkedList {
     struct linkedList * next; /*pointer to the next element*/
 }
 
-Q; /*destructor*/
+    Q; /*destructor*/
 Q * qeue = NULL; /*At Initial stage there nothing in the qeue */
 
 void input_from_user() {
     //int x; //Arrival time
 
     srand(time(NULL));
-   // n = 1 + (rand()%5);
+    // n = 1 + (rand()%5);
     printf("\nTotal Number of nodes in the network:");
     scanf("%d",&n);
     /*printf("\nQuantum time(It will be dynamic)::");
-    scanf("%d",&QT);*/
+      scanf("%d",&QT);*/
 //Upper bound of SGX time
 
-printf("\nEnter the upper bound of SGXtime:");
-scanf("%d",&upsgx);
+    printf("\nEnter the upper bound of SGXtime:");
+    scanf("%d",&upsgx);
 
-printf("\nEnter the split for tiers:");
-scanf("%d",&tierdiv);
+    printf("\nEnter the split for tiers:");
+    scanf("%d",&tierdiv);
 
-printf("\nEnter the maximum time for Arrival Time:");
-scanf("%d",&maxat);
+    printf("\nEnter the maximum time for Arrival Time:");
+    scanf("%d",&maxat);
     for (i = 0; i < n; i++) {
         //printf("\nArrival time for Node %d:\t", i);
         //scanf("%d", & nodes[i][0]);
         int b = 1 + rand() % upsgx;
         int a = rand() % 10;
-      int at = rand() % maxat; // arrival time is randomly generated
+	int at = rand() % maxat; // arrival time is randomly generated
         nodes[i][0]=at;
         nodes[i][1] = b;
         nodes[i][2] = 0;
@@ -88,7 +88,7 @@ unsigned int taemLeft() {
         {
             x = 1;
         }
-       if (nodes[i][3] == 0)
+	if (nodes[i][3] == 0)
             nodes[i][2]=1;
     }
     return x;
@@ -154,8 +154,8 @@ unsigned int upcommingNode() {
     Q * n;
     int x;
     if (qeue == NULL)
-    /*imagine that there is no nodes in the queue
-           thus Q =NULL*/
+	/*imagine that there is no nodes in the queue
+	  thus Q =NULL*/
     {
         return -1; //index starts from 0, -1 means no process in the queue //
     } else {
@@ -212,7 +212,7 @@ void arrange() {
 void FullQueue() {
     float sd=0;
     printf("\n\nOverall Queue:");
-     printf("\n-------------\n");
+    printf("\n-------------\n");
     for (int i = 0; i <= taem; i++) {
         printf("[Node%d]", queue[i]);
     }
@@ -264,10 +264,10 @@ void AET() {
     printf("\n\nAvg Elapsed time: %f\n\n\n", AvgElp);
 
 
-        //Standard Deviation for Elapsed time
+    //Standard Deviation for Elapsed time
     for(int i=0;i<n;i++)
     {
-      sd2+=(ET[i]-AvgElp)*(ET[i]-AvgElp);
+	sd2+=(ET[i]-AvgElp)*(ET[i]-AvgElp);
     }
     sd2=sqrt(sd2/(n-1));
     printf("\n\nStandard Deviation for Elapsed time: %f\n",sd2);
