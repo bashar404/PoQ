@@ -16,6 +16,7 @@
 
 #include "queue_t.h"
 
+#ifndef max(a, b)
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
@@ -25,6 +26,8 @@
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })
+
+#endif
 
 #define MAX_SIZE 10000
 
@@ -38,6 +41,7 @@ struct node {
 };
 
 typedef struct node node_t;
+typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
@@ -97,9 +101,6 @@ void simulate_poet() {
     for (i = 0; i < n; i++) {
         printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n", i, nodes[i].arrival_time, nodes[i].sgx_time, nodes[i].n_leadership, nodes[i].time_left);
     }
-    Q * queue = NULL;
-    /*Each time when simulate_poet() is called than it will show whose next and initially Q is zero*/
-    Q * n;
 }
 
 uint time_left() {
@@ -176,10 +177,7 @@ void node_arrive() {
 unsigned int upcoming_node() {
     Q * n;
     int x;
-    if (queue == NULL)
-	/*imagine that there is no nodes in the nodes_queue
-	  thus Q =NULL*/
-    {
+    if (queue == NULL) { //imagine that there is no nodes in the nodes_queue thus Q =NULL
         return -1; //index starts from 0, -1 means no process in the nodes_queue //
     } else {
         x = queue-> N;
@@ -234,7 +232,7 @@ void show_overall_queue() {
     printf("Overall Queue:\n");
     printf("-------------\n");
     for (int i = 0; i <= taem; i++) {
-        printf("[Node%d]\n", nodes_queue[i]);
+        printf("[Node%d]", nodes_queue[i]);
     }
     printf("Waiting time:\n");
     printf("------------\n");
