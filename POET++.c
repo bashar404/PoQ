@@ -4,12 +4,13 @@
  *Description: Maximum Node 100, Anything with start from time=0,
  *H*/
 #include <stdio.h>
-//#include <conio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
 #include <string.h>
 #include <time.h>
+
+#include "queue.h"
 
 
 int nodes[10000][4], n, i, queue[100000], WT[10000], taem = 0, q = 0, x, ET[10000], tym = 0, ct,upsgx,maxat,tiercount,tierdiv;
@@ -19,9 +20,8 @@ float QTT[10000], sumT[10000], ncT[10000];
 typedef struct linkedList {
     unsigned int N; /*N --> Index*/
     struct linkedList * next; /*pointer to the next element*/
-}
+} Q; /*destructor*/
 
-    Q; /*destructor*/
 Q * qeue = NULL; /*At Initial stage there nothing in the qeue */
 
 void input_from_user() {
