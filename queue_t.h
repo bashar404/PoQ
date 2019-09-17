@@ -26,11 +26,11 @@ queue_t *queue_constructor() {
 }
 
 int queue_is_empty(queue_t *Q) {
-    return Q->top == 0;
+    return Q == NULL || Q->top == NULL;
 }
 
 data queue_dequeue(queue_t *Q) {
-    if (Q == 0) {
+    if (Q == NULL) {
         return 0;
     }
 
@@ -44,7 +44,7 @@ data queue_dequeue(queue_t *Q) {
 }
 
 void queue_enqueue(queue_t *Q, data d) {
-    if (Q == 0) {
+    if (Q == NULL) {
         return;
     }
 
@@ -55,7 +55,6 @@ void queue_enqueue(queue_t *Q, data d) {
     new_item->next = Q->top;
     Q->top = new_item;
     new_item->d = d;
-
     return;
 
     error:
@@ -63,7 +62,7 @@ void queue_enqueue(queue_t *Q, data d) {
 }
 
 void queue_destructor(queue_t *Q) {
-    if (Q == 0) {
+    if (Q == NULL) {
         return;
     }
 

@@ -177,8 +177,8 @@ void node_arrive() {
 unsigned int upcoming_node() {
     Q * n;
     int x;
-    if (queue == NULL) { //imagine that there is no nodes in the nodes_queue thus Q =NULL
-        return -1; //index starts from 0, -1 means no process in the nodes_queue //
+    if (queue == NULL) { // imagine that there is no nodes in the nodes_queue thus Q =NULL
+        return -1; // index starts from 0, -1 means no process in the nodes_queue //
     } else {
         x = queue-> N;
         n = queue;
