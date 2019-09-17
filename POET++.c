@@ -100,7 +100,6 @@ void simulate_poet() {
     Q * queue = NULL;
     /*Each time when simulate_poet() is called than it will show whose next and initially Q is zero*/
     Q * n;
-
 }
 
 uint time_left() {
@@ -118,7 +117,7 @@ uint time_left() {
     return x;
 }
 
-void updateLL(int k) {
+void update_linked_list(int k) {
     Q * n, * n1; //add at the end point//
     n = (Q * ) malloc(sizeof(Q)); /*allocation of memory for n, malloc size of destructor*/
     n->next = NULL; //then point to null as LL//
@@ -158,10 +157,10 @@ void calculate_quantum_time() {
         }
     }
 
-    printf("\nCURRENT time: %d", ct);
+    printf("CURRENT time: %d\n", ct);
     for (i = 1; i <= tiercount; i++) {
-        printf("\nQuantum time for tier %d: %0.1f", i, QTT[i]);
-        printf("\nNodes in tier %d: %0.1f", i, ncT[i]);
+        printf("Quantum time for tier %d: %0.1f\n", i, QTT[i]);
+        printf("Nodes in tier %d: %0.1f\n", i, ncT[i]);
     }
 }
 
@@ -169,12 +168,12 @@ void node_arrive() {
     for (int i = 0; i < n; i++) /*when index[i=0] means AT is zero*/ {
         if (nodes[i].arrival_time == taem) /*time=0 already declared*/ {
             calculate_quantum_time();
-            updateLL(i); /*updateLL function is called*/
+            update_linked_list(i); /*update_linked_list function is called*/
         }
     }
 }
 
-unsigned int upcomming_node() {
+unsigned int upcoming_node() {
     Q * n;
     int x;
     if (queue == NULL)
@@ -196,25 +195,24 @@ void arrange() {
 
     node_arrive();
     while (time_left()) {
-        n = upcomming_node(); //Here, n for next node
-        if (n == -1) // if nodes_queue is null, no node arrived, increment the time
-        {
+        n = upcoming_node(); //Here, n for next node
+        // if nodes_queue is null, no node arrived, increment the time
+        if (n == -1) {
             taem++;
             ct++;
             node_arrive();
-        } else // some nodes in the nodes_queue
-        {
+        } else { // some nodes in the nodes_queue
             int temptier2 = 0;
-            float uval2 = nodes[n].sgx_time;
+            float uval2 = (float) nodes[n].sgx_time;
             float tval2 = tierdiv;
-            temptier2 = ceil(uval2/tval2);
+            temptier2 = (int) ceilf(uval2/tval2);
             q = QTT[temptier2];
 
             if (nodes[n].time_left < q) {
                 q = nodes[n].time_left;
             }
 
-            for (unsigned int i = q; i > 0; i--) {
+            for (uint i = q; i > 0; i--) {
                 nodes_queue[taem] = n;
                 taem++;
                 nodes[n].time_left--; //reducing the remaining time
@@ -222,9 +220,8 @@ void arrange() {
                 node_arrive(); // keeping track if any node join
             }
 
-            if (nodes[n].time_left > 0) // if nodes has SGX time left add to the nodes_queue at the end
-            {
-                updateLL(n);
+            if (nodes[n].time_left > 0) { // if nodes has SGX time left add to the nodes_queue at the end
+                update_linked_list(n);
             }
         }
 
@@ -233,16 +230,16 @@ void arrange() {
 }
 
 void show_overall_queue() {
-    float sd = 0.0f;
-    printf("\n\nOverall Queue:");
-    printf("\n-------------\n");
+    float st_deviation = 0.0f;
+    printf("Overall Queue:\n");
+    printf("-------------\n");
     for (int i = 0; i <= taem; i++) {
-        printf("[Node%d]", nodes_queue[i]);
+        printf("[Node%d]\n", nodes_queue[i]);
     }
-    printf("\n\nWaiting time:");
-    printf("\n------------");
+    printf("Waiting time:\n");
+    printf("------------\n");
     for (unsigned int i = 0; i < n; i++) {
-        printf("\nWaiting time for Node%d: %d", i, wait_times[i]);
+        printf("Waiting time for Node%d: %f\n", i, wait_times[i]);
     }
     //counting avg wait_times
     float average_wait_time = 0.0f;
@@ -250,51 +247,49 @@ void show_overall_queue() {
         average_wait_time = average_wait_time + wait_times[i];
     }
     average_wait_time = average_wait_time / n;
-    printf("\n\nAvg Waiting time: %f", average_wait_time);
+    printf("Avg Waiting time: %f\n", average_wait_time);
     //Standard Deviation for Waiting taem
-    for(int i=0;i<n;i++)
-    {
-        sd+= (wait_times[i] - average_wait_time) * (wait_times[i] - average_wait_time);
+    for(int i = 0; i < n; i++) {
+        st_deviation += (wait_times[i] - average_wait_time) * (wait_times[i] - average_wait_time);
     }
-    sd=sqrt(sd/(n-1));
-    printf("\n\nStandard Deviation for (Waiting): %f",sd);
+    st_deviation = sqrtf(st_deviation / ((float)n - 1));
+    printf("Standard Deviation for (Waiting): %f\n", st_deviation);
 }
 
 void waiting_time() {
-    uint releasetime, t;
+    uint release_time, t;
     for (uint i = 0; i < n; i++) {
-
         for (t = taem - 1; nodes_queue[t] != i; t--);
-        releasetime = t + 1;
-        wait_times[i] = (float) releasetime - nodes[i].arrival_time - nodes[i].sgx_time;
+        release_time = t + 1;
+        wait_times[i] = (float) (release_time - nodes[i].arrival_time - nodes[i].sgx_time);
     }
 }
 
 void average_estimated_time() {
-    float sd2 = 0;
+    float st_deviation = 0;
     uint release_time, t;
-    float total = 0.0, AvgElp = 0.0;
-    printf("\n\n\nElapsed time:");
-    printf("\n------------");
-    for (unsigned int i = 0; i < n; i++) {
+    float total = 0.0f, AvgElp = 0.0f;
+    printf("Elapsed time:\n");
+    printf("------------\n");
+    for (uint i = 0; i < n; i++) {
         for (t = taem - 1; nodes_queue[t] != i; t--);
         release_time = t + 1;
         elapsed_time[i] = release_time - nodes[i].arrival_time;
 
-        printf("\nElapsed time for Node%d:\t%d", i, elapsed_time[i]);
+        printf("Elapsed time for Node%d:\t%d\n", i, elapsed_time[i]);
         total += elapsed_time[i];
     }
 
     AvgElp = total / n;
-    printf("\n\nAvg Elapsed time: %f\n\n\n", AvgElp);
+    printf("Avg Elapsed time: %f\n", AvgElp);
 
     //Standard Deviation for Elapsed time
     for(int i = 0; i < n; i++) {
-	    sd2 += (elapsed_time[i] - AvgElp) * (elapsed_time[i] - AvgElp);
+        st_deviation += (elapsed_time[i] - AvgElp) * (elapsed_time[i] - AvgElp);
     }
 
-    sd2 = sqrt((double) sd2 / (n-1));
-    printf("\nStandard Deviation for Elapsed time: %f\n", sd2);
+    st_deviation = sqrtf(st_deviation / (float) (n - 1));
+    printf("Standard Deviation for Elapsed time: %f\n", st_deviation);
 }
 
 void pause_for_user(int promptUser, int clearStream) {
