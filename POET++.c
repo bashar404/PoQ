@@ -59,23 +59,23 @@ uint randint(int start, int end) {
     return start + rand() % end;
 }
 
-void get_input_from_user(int show_prompt) {
-    if (show_prompt) printf("Seed for pseudo-random number generator (-1 to set it automatically): ");
-    uint seed;
-    scanf("%u", &seed);
-    seed = seed < 0 ? max(0,seed) : (uint) time(NULL);
+void get_input_from_user(int prompt) {
+    if (prompt) printf("Seed for pseudo-random number generator (-1 for random): ");
+    int seed;
+    scanf("%d", &seed);
+    seed = seed >= 0 ? max(0,seed) : (int) time(NULL);
     srand(seed);
 
-    if (show_prompt) printf("Number of nodes in the network: ");
+    if (prompt) printf("Number of nodes in the network: ");
     scanf("%d",&n);
 
-    if (show_prompt) printf("SGXtime upper bound: ");
+    if (prompt) printf("SGXtime upper bound: ");
     scanf("%d",&upsgx);
 
-    if (show_prompt) printf("Split for tiers: ");
+    if (prompt) printf("Split for tiers: ");
     scanf("%d",&tierdiv);
 
-    if (show_prompt) printf("Arrival maximum time: ");
+    if (prompt) printf("Arrival maximum time: ");
     scanf("%d",&maxat);
     for (i = 0; i < n; i++) {
         int b = randint(1, upsgx);
@@ -318,5 +318,12 @@ int main(int argc, char *argv[]) {
     waiting_time();
     show_overall_queue();
     average_estimated_time();
-    pause_for_user(0, 0);
+
+#ifdef __linux__
+    int promptUser = 0;
+#else
+    int promptUser = 1;
+#endif
+
+    pause_for_user(promptUser, promptUser);
 }
