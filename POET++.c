@@ -14,7 +14,7 @@
 //change this to NDEBUG if don't want to check assertions <assert(...)>
 #define DEBUG
 
-#include "queue.h"
+#include "queue_t.h"
 
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -26,12 +26,23 @@
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })
 
+#define MAX_SIZE 10000
+
 /*********************************************************************/
 
-//TODO: change nodes variable into a list of structs for each node
+struct node {
+    int arrival_time;
+    int sgx_time;
+    int n_leadership;
+    int time_left;
+};
 
-uint nodes[10000][4], n, i, nodes_queue[100000], taem = 0, q = 0, x, elapsed_time[10000], tym = 0, ct, upsgx, maxat, tiercount, tierdiv;
-float QTT[10000], sumT[10000], ncT[10000], wait_times[10000];
+typedef struct node node_t;
+
+node_t nodes[MAX_SIZE];
+
+uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, ct, upsgx, maxat, tiercount, tierdiv;
+float QTT[MAX_SIZE], sumT[MAX_SIZE], ncT[MAX_SIZE], wait_times[MAX_SIZE];
 
 typedef struct linkedList {
     unsigned int N; /*N --> Index*/
@@ -41,7 +52,7 @@ typedef struct linkedList {
 Q * queue = NULL; /*At Initial stage there nothing in the queue */
 
 uint randint(int start, int end) {
-    assert(start<=end);
+    assert(start <= end);
     start = max(0, min(start, RAND_MAX));
     end = max(0, min(end, RAND_MAX));
 
@@ -70,10 +81,10 @@ void get_input_from_user(int show_prompt) {
         int b = randint(1, upsgx);
         int a = randint(0, 10);
 	    int at = randint(0, maxat); // arrival time is randomly generated
-        nodes[i][0] = at;
-        nodes[i][1] = b;
-        nodes[i][2] = 0;
-        nodes[i][3] = nodes[i][1];
+        nodes[i].arrival_time = at;
+        nodes[i].sgx_time = b;
+        nodes[i].n_leadership = 0;
+        nodes[i].time_left = nodes[i].sgx_time;
     }
 
     float uval = (float) upsgx;
@@ -84,28 +95,24 @@ void get_input_from_user(int show_prompt) {
 void simulate_poet() {
     printf("Pass     :\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (i = 0; i < n; i++) {
-        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n", i, nodes[i][0], nodes[i][1], nodes[i][2], nodes[i][3]);
+        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n", i, nodes[i].arrival_time, nodes[i].sgx_time, nodes[i].n_leadership, nodes[i].time_left);
     }
-    // printf("\nNext Node:");
     Q * queue = NULL;
     /*Each time when simulate_poet() is called than it will show whose next and initially Q is zero*/
     Q * n;
-//    for (n = queue; n != NULL; n = n->next) {
-//        printf("P%d", n->N);
-//    }
 
 }
 
 uint time_left() {
-    x = 0; // as boolean, 0 means false
+    x = 0;
     for (int i = 0; i < n; i++) {
         // if any node has remaining time it returns true
-        if (nodes[i][3] > 0) {
+        if (nodes[i].time_left > 0) {
             x = 1;
         }
 
-        if (nodes[i][3] == 0) {
-            nodes[i][2] = 1;
+        if (nodes[i].time_left == 0) {
+            nodes[i].n_leadership = 1;
         }
     }
     return x;
@@ -125,7 +132,7 @@ void updateLL(int k) {
     }
 }
 
-void calculate_qt() {
+void calculate_quantum_time() {
     for (i = 1; i <= tiercount; i++) {
         sumT[i] = 0;
         ncT[i] = 0;
@@ -133,12 +140,12 @@ void calculate_qt() {
 
     int temptier = 0;
     for (i = 0; i < n; i++) {
-        if (ct >= nodes[i][0]) {
-            float uval3 = nodes[i][1];
+        if (ct >= nodes[i].arrival_time) {
+            float uval3 = nodes[i].sgx_time;
             float tval3 = tierdiv;
             temptier = ceil(uval3/tval3);
             ncT[temptier] += 1;
-            sumT[temptier] = sumT[temptier] + nodes[i][3];
+            sumT[temptier] = sumT[temptier] + nodes[i].time_left;
         }
     }
 
@@ -160,8 +167,8 @@ void calculate_qt() {
 
 void node_arrive() {
     for (int i = 0; i < n; i++) /*when index[i=0] means AT is zero*/ {
-        if (nodes[i][0] == taem) /*time=0 already declared*/ {
-            calculate_qt();
+        if (nodes[i].arrival_time == taem) /*time=0 already declared*/ {
+            calculate_quantum_time();
             updateLL(i); /*updateLL function is called*/
         }
     }
@@ -198,32 +205,30 @@ void arrange() {
         } else // some nodes in the nodes_queue
         {
             int temptier2 = 0;
-            float uval2 = nodes[n][1];
+            float uval2 = nodes[n].sgx_time;
             float tval2 = tierdiv;
             temptier2 = ceil(uval2/tval2);
             q = QTT[temptier2];
 
-            if (nodes[n][3] < q) {
-                q = nodes[n][3];
+            if (nodes[n].time_left < q) {
+                q = nodes[n].time_left;
             }
 
             for (unsigned int i = q; i > 0; i--) {
                 nodes_queue[taem] = n;
                 taem++;
-                nodes[n][3]--; //reducing the remaining time
+                nodes[n].time_left--; //reducing the remaining time
                 ct++;
                 node_arrive(); // keeping track if any node join
             }
 
-            if (nodes[n][3] > 0) // if nodes has SGX time left add to the nodes_queue at the end
+            if (nodes[n].time_left > 0) // if nodes has SGX time left add to the nodes_queue at the end
             {
                 updateLL(n);
             }
         }
 
         simulate_poet();
-        int x;
-        taem;
     }
 }
 
@@ -261,7 +266,7 @@ void waiting_time() {
 
         for (t = taem - 1; nodes_queue[t] != i; t--);
         releasetime = t + 1;
-        wait_times[i] = (float) releasetime - nodes[i][0] - nodes[i][1];
+        wait_times[i] = (float) releasetime - nodes[i].arrival_time - nodes[i].sgx_time;
     }
 }
 
@@ -274,7 +279,7 @@ void average_estimated_time() {
     for (unsigned int i = 0; i < n; i++) {
         for (t = taem - 1; nodes_queue[t] != i; t--);
         release_time = t + 1;
-        elapsed_time[i] = release_time - nodes[i][0];
+        elapsed_time[i] = release_time - nodes[i].arrival_time;
 
         printf("\nElapsed time for Node%d:\t%d", i, elapsed_time[i]);
         total += elapsed_time[i];
@@ -284,12 +289,12 @@ void average_estimated_time() {
     printf("\n\nAvg Elapsed time: %f\n\n\n", AvgElp);
 
     //Standard Deviation for Elapsed time
-    for(int i=0;i<n;i++) {
+    for(int i = 0; i < n; i++) {
 	    sd2 += (elapsed_time[i] - AvgElp) * (elapsed_time[i] - AvgElp);
     }
 
-    sd2 = sqrt(sd2/(n-1));
-    printf("\n\nStandard Deviation for Elapsed time: %f\n", sd2);
+    sd2 = sqrt((double) sd2 / (n-1));
+    printf("\nStandard Deviation for Elapsed time: %f\n", sd2);
 }
 
 void pause_for_user(int promptUser, int clearStream) {

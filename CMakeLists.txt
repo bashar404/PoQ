@@ -7,6 +7,6 @@ include_directories(.)
 
 add_executable(PoET_Code
         POET++.c
-        queue.h)
+        queue_t.h)
 
 target_link_libraries(PoET_Code m)
