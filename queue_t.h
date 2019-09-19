@@ -113,6 +113,7 @@ void queue_print(queue_t *q) {
 
     if (queue_is_empty(q)) {
         printf("[NILL]\n");
+        return;
     }
 
     for(item_t *i = q->head; i != NULL; i=i->next) {
