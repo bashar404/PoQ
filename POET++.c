@@ -45,8 +45,8 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, current_time, sgx_max, arrival_time_max, tiercount, tierdiv;
-float QTT[MAX_SIZE], sumT[MAX_SIZE], ncT[MAX_SIZE], wait_times[MAX_SIZE];
+uint n, nodes_queue[MAX_SIZE], taem, q, x, elapsed_time[MAX_SIZE], tym, current_time, sgx_max, arrival_time_max, tier_count, tierdiv;
+float tier_quantum_time[MAX_SIZE], sumT[MAX_SIZE], tier_active_nodes[MAX_SIZE], wait_times[MAX_SIZE];
 
 queue_t *queue = NULL;
 
@@ -66,17 +66,17 @@ void get_input_from_user(int prompt) {
     srand(seed);
 
     if (prompt) printf("Number of nodes in the network: ");
-    scanf("%d",&n);
+    scanf("%d", &n);
 
     if (prompt) printf("SGXtime upper bound: ");
-    scanf("%d",&sgx_max);
+    scanf("%d", &sgx_max);
 
     if (prompt) printf("Split for tiers: ");
-    scanf("%d",&tierdiv);
+    scanf("%d", &tierdiv);
 
     if (prompt) printf("Arrival maximum time: ");
-    scanf("%d",&arrival_time_max);
-    for (i = 0; i < n; i++) {
+    scanf("%d", &arrival_time_max);
+    for (int i = 0; i < n; i++) {
         int b = randint(1, sgx_max);
         int a = randint(0, 10);
 	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
@@ -88,12 +88,12 @@ void get_input_from_user(int prompt) {
 
     float uval = (float) sgx_max;
     float tval = (float) tierdiv;
-    tiercount = ceil((double) uval/tval);
+    tier_count = ceil((double) uval/tval);
 }
 
 void simulate_poet() {
     printf("Pass     :\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
                 i,
                 nodes[i].arrival_time,
@@ -114,35 +114,32 @@ uint time_left() {
 }
 
 void calculate_quantum_time() {
-    for (i = 1; i <= tiercount; i++) {
+    for (int i = 1; i <= tier_count; i++) {
         sumT[i] = 0;
-        ncT[i] = 0;
+        tier_active_nodes[i] = 0;
     }
 
     int temptier = 0;
-    for (i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++) {
         if (current_time >= nodes[i].arrival_time) {
-            float uval3 = nodes[i].sgx_time;
-            float tval3 = tierdiv;
-            temptier = ceil(uval3/tval3);
-            ncT[temptier] += 1;
+            temptier = (int) ceilf(nodes[i].sgx_time / (float) tierdiv);
+            tier_active_nodes[temptier] += 1;
             sumT[temptier] = sumT[temptier] + nodes[i].time_left;
         }
     }
 
-    for (i = 1; i <= tiercount; i++) {
+    for (int i = 1; i <= tier_count; i++) {
         if (sumT[i] != 0) {
-            float st = sumT[i];
-            float nt = ncT[i];
-            float sval = (sumT[i] / ncT[i]) * (1 / ncT[i]);
-            QTT[i] = ceil(sval);
+            float nt = tier_active_nodes[i];
+            float sval = sumT[i] / (nt*nt);
+            tier_quantum_time[i] = ceilf(sval);
         }
     }
 
     printf("CURRENT time: %d\n", current_time);
-    for (i = 1; i <= tiercount; i++) {
-        printf("Quantum time for tier %d: %0.1f\n", i, QTT[i]);
-        printf("Nodes in tier %d: %0.1f\n", i, ncT[i]);
+    for (int i = 1; i <= tier_count; i++) {
+        printf("Quantum time for tier %d: %0.1f\n", i, tier_quantum_time[i]);
+        printf("Nodes in tier %d: %0.1f\n", i, tier_active_nodes[i]);
     }
 }
 
@@ -178,11 +175,9 @@ void arrange() {
             current_time++;
             node_arrive();
         } else { // some nodes in the nodes_queue
-            int temptier2 = 0;
-            float uval2 = (float) nodes[n].sgx_time;
-            float tval2 = tierdiv;
-            temptier2 = (int) ceilf(uval2/tval2);
-            q = QTT[temptier2];
+            int temptier = 0;
+            temptier = (int) ceilf(nodes[n].sgx_time / (float) tierdiv);
+            q = tier_quantum_time[temptier];
 
             if (nodes[n].time_left < q) {
                 q = nodes[n].time_left;
@@ -244,9 +239,8 @@ void waiting_time() {
 }
 
 void average_estimated_time() {
-    float st_deviation = 0;
     uint release_time, t;
-    float total = 0.0f, AvgElp = 0.0f;
+    float avg_elapsed_time = 0.0f;
     printf("Elapsed time:\n");
     printf("------------\n");
     for (uint i = 0; i < n; i++) {
@@ -255,15 +249,17 @@ void average_estimated_time() {
         elapsed_time[i] = release_time - nodes[i].arrival_time;
 
         printf("Elapsed time for Node%d:\t%d\n", i, elapsed_time[i]);
-        total += elapsed_time[i];
+        avg_elapsed_time += elapsed_time[i];
     }
 
-    AvgElp = total / n;
-    printf("Avg Elapsed time: %f\n", AvgElp);
+    avg_elapsed_time /= n;
+    printf("Avg Elapsed time: %f\n", avg_elapsed_time);
 
     //Standard Deviation for Elapsed time
+    float st_deviation = 0.0f;
     for(int i = 0; i < n; i++) {
-        st_deviation += (elapsed_time[i] - AvgElp) * (elapsed_time[i] - AvgElp);
+        float tmp = (elapsed_time[i] - avg_elapsed_time);
+        st_deviation += tmp*tmp;
     }
 
     st_deviation = sqrtf(st_deviation / (float) (n - 1));
@@ -273,9 +269,7 @@ void average_estimated_time() {
 void pause_for_user(int promptUser, int clearStream) {
     if (clearStream) {
         int c;
-        while ((c = getchar()) != '\n' && c != EOF) {
-            /* all work in condition */
-        }
+        while ((c = getchar()) != '\n' && c != EOF);
         clearerr(stdin);
     }
     if (promptUser) fputs("Press [Enter] to continue", stdout);
@@ -283,6 +277,10 @@ void pause_for_user(int promptUser, int clearStream) {
 }
 
 int main(int argc, char *argv[]) {
+    /*Variables initialization*/
+    q = 0;
+    tym = 0;
+    taem = 0;
     queue = queue_constructor();
 
     int show_user_prompt = argc <= 1;
