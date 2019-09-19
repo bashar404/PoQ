@@ -45,7 +45,7 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, current_time, upsgx, maxat, tiercount, tierdiv;
+uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, current_time, sgx_max, arrival_time_max, tiercount, tierdiv;
 float QTT[MAX_SIZE], sumT[MAX_SIZE], ncT[MAX_SIZE], wait_times[MAX_SIZE];
 
 queue_t *queue = NULL;
@@ -69,24 +69,24 @@ void get_input_from_user(int prompt) {
     scanf("%d",&n);
 
     if (prompt) printf("SGXtime upper bound: ");
-    scanf("%d",&upsgx);
+    scanf("%d",&sgx_max);
 
     if (prompt) printf("Split for tiers: ");
     scanf("%d",&tierdiv);
 
     if (prompt) printf("Arrival maximum time: ");
-    scanf("%d",&maxat);
+    scanf("%d",&arrival_time_max);
     for (i = 0; i < n; i++) {
-        int b = randint(1, upsgx);
+        int b = randint(1, sgx_max);
         int a = randint(0, 10);
-	    int at = randint(0, maxat); // arrival time is randomly generated
+	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
         nodes[i].arrival_time = at;
         nodes[i].sgx_time = b;
         nodes[i].n_leadership = 0;
         nodes[i].time_left = nodes[i].sgx_time;
     }
 
-    float uval = (float) upsgx;
+    float uval = (float) sgx_max;
     float tval = (float) tierdiv;
     tiercount = ceil((double) uval/tval);
 }
