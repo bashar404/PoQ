@@ -12,65 +12,127 @@ struct item {
 };
 
 struct queue {
-    struct item *top;
+    size_t size;
+    struct item *head;
+    struct item *tail;
 };
 
 typedef struct item item_t;
 typedef struct queue queue_t;
 
-queue_t *queue_constructor() {
-    queue_t *Q = (queue_t *) malloc(sizeof(queue_t));
-    memset(Q, 0, sizeof(queue_t));
+queue_t* queue_constructor() {
+    queue_t *q = (queue_t *) malloc(sizeof(queue_t));
+    if (q == NULL) goto error;
 
-    return Q;
-}
+    memset(q, 0, sizeof(queue_t));
 
-int queue_is_empty(queue_t *Q) {
-    return Q == NULL || Q->top == NULL;
-}
-
-data queue_dequeue(queue_t *Q) {
-    if (Q == NULL) {
-        return 0;
-    }
-
-    if (! queue_is_empty(Q)) {
-        item_t *t = Q->top;
-        Q->top = Q->top->next;
-        data d = t->d;
-        free(t);
-        return d;
-    }
-}
-
-void queue_enqueue(queue_t *Q, data d) {
-    if (Q == NULL) {
-        return;
-    }
-
-    item_t *new_item = (item_t *) malloc(sizeof(item_t));
-    if (new_item == NULL) goto error;
-
-    memset(new_item, 0, sizeof(item_t));
-    new_item->next = Q->top;
-    Q->top = new_item;
-    new_item->d = d;
-    return;
+    return q;
 
     error:
-    fprintf(stderr, "Could not allocate memory space for item in queue.\n");
+    fprintf(stderr, "Could not allocate memory for queue\n");
+    return NULL;
 }
 
-void queue_destructor(queue_t *Q) {
-    if (Q == NULL) {
-        return;
+int queue_is_empty(queue_t *q) {
+    return q != NULL && q->head == q->tail && q->head;
+}
+
+data queue_front(queue_t *q) {
+    assert(q != NULL);
+
+    if (q->head != NULL) {
+        return q->head->d;
+    } else {
+        goto error1;
     }
 
-    while (! queue_is_empty(Q)) {
-        queue_dequeue(Q);
+    error1:
+    fprintf(stderr, "The queue is empty\n");
+    return 0;
+}
+
+data queue_back(queue_t *q) {
+    assert(q != NULL);
+
+    if (q->tail != NULL) {
+        return q->tail->d;
+    } else {
+        goto error1;
     }
 
-    free(Q);
+    error1:
+    fprintf(stderr, "The queue is empty\n");
+    return 0;
+}
+
+void queue_pop(queue_t *q) {
+    assert(q != NULL);
+
+    if (q->head != NULL) {
+        item_t *t = q->head;
+        q->head = q->head->next;
+        if (t == q->tail) {
+            q->tail = NULL;
+            assert(q->head == NULL);
+        }
+        free(t);
+        q->size--;
+    } else {
+        assert(q->tail == NULL);
+    }
+}
+
+void queue_push(queue_t *q, data d) {
+    assert(q != NULL);
+
+    item_t *new_item = malloc(sizeof(item_t));
+    if (new_item == NULL) goto error1;
+    memset(new_item, 0, sizeof(item_t));
+
+    new_item->d = d;
+
+    if (q->tail == NULL){
+        assert(q->head == NULL);
+        q->head = q->tail = new_item;
+    } else {
+        q->tail->next = new_item;
+        q->tail = new_item;
+    }
+
+    q->size++;
+
+    return;
+
+    error1:
+    fprintf(stderr, "Could not allocate new item into queue\n");
+}
+
+void queue_print(queue_t *q) {
+    assert(q != NULL);
+
+    if (queue_is_empty(q)) {
+        printf("[NILL]\n");
+    }
+
+    for(item_t *i = q->head; i != NULL; i=i->next) {
+        printf("[%u]", i->d);
+    }
+    printf("\n");
+}
+
+size_t queue_size(queue_t *q) {
+    assert(q != NULL);
+    return q->size;
+}
+
+void queue_destructor(queue_t *q) {
+    assert(q != NULL);
+
+    while(!queue_is_empty(q)) {
+        queue_pop(q);
+    }
+
+    free(q);
 }
 
 #endif
