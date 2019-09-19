@@ -34,7 +34,8 @@ queue_t* queue_constructor() {
 }
 
 int queue_is_empty(queue_t *q) {
-    return q != NULL && q->head == q->tail && q->head;
+    assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL aswell
+    return q != NULL && q->head == NULL;
 }
 
 data queue_front(queue_t *q) {
