@@ -45,8 +45,8 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint node_count, nodes_queue[MAX_SIZE], taem, tym, sgx_max, arrival_time_max, tier_count, total_tiers;
-uint elapsed_time[MAX_SIZE], current_time, wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
+uint node_count, sgx_max, arrival_time_max, tier_count, total_tiers, current_time;
+uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
 float sumT[MAX_SIZE];
 
 queue_t *queue = NULL;
@@ -91,7 +91,7 @@ void get_input_from_user(int prompt) {
 }
 
 void print_sgx_table() {
-    printf("Pass     :\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
+    printf("Pass:\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (int i = 0; i < node_count; i++) {
         printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
                 i,
@@ -107,7 +107,7 @@ int is_time_left() {
     for (int i = 0; i < node_count; i++) {
         // if any node has remaining time it returns true
         b = (nodes[i].time_left > 0);
-        nodes[i].n_leadership = (nodes[i].time_left == 0);
+        nodes[i].n_leadership = (nodes[i].time_left == 0); // FIXME: shouldn't this be incremented by 1?
     }
     return b;
 }
@@ -144,7 +144,7 @@ void calculate_quantum_time() {
 
 void node_arrive() {
     for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
-        if (nodes[i].arrival_time == taem) { /*time = 0 already declared*/
+        if (nodes[i].arrival_time == current_time) { /*time = 0 already declared*/
             calculate_quantum_time();
             queue_push(queue, i);
         }
@@ -158,12 +158,12 @@ void arrange() {
     while (is_time_left()) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
-            taem++;
             current_time++;
             node_arrive();
         } else { // some nodes in the nodes_queue
             current_node = queue_front(queue);
             queue_pop(queue);
+
             int temptier = 0;
             temptier = (int) ceilf(nodes[current_node].sgx_time / (float) total_tiers);
             int qt = (int) tier_quantum_time[temptier];
@@ -173,9 +173,8 @@ void arrange() {
             }
 
             for (uint i = qt; i > 0; i--) {
-                nodes_queue[taem] = current_node;
+                nodes_queue[current_time] = current_node;
                 nodes[current_node].time_left--; //reducing the remaining time
-                taem++;
                 current_time++;
                 node_arrive(); // keeping track if any node join
             }
@@ -190,10 +189,9 @@ void arrange() {
 }
 
 void show_overall_queue() {
-    float st_deviation = 0.0f;
     printf("Overall Queue:\n");
     printf("-------------\n");
-    for (int i = 0; i <= taem; i++) {
+    for (int i = 0; i <= current_time; i++) {
         printf("[Node%d]", nodes_queue[i]);
     }
     printf("\n");
@@ -214,18 +212,19 @@ void show_overall_queue() {
     }
     average_wait_time = average_wait_time / node_count;
     printf("Avg Waiting time: %f\n", average_wait_time);
-    //Standard Deviation for Waiting taem
+    /* Standard Deviation for Waiting taem */
+    float st_deviation = 0.0f;
     for(int i = 0; i < node_count; i++) {
         st_deviation += (wait_times[i] - average_wait_time) * (wait_times[i] - average_wait_time);
     }
     st_deviation = sqrtf(st_deviation / ((float)node_count - 1));
-    printf("Standard Deviation for (Waiting): %f\n", st_deviation);
+    printf("Standard Deviation for Waiting time: %f\n", st_deviation);
 }
 
 void waiting_time() {
     uint release_time, t;
     for (uint i = 0; i < node_count; i++) {
-        for (t = taem - 1; nodes_queue[t] != i; t--);
+        for (t = current_time - 1; nodes_queue[t] != i; t--);
         release_time = t + 1;
         wait_times[i] = release_time - nodes[i].arrival_time - nodes[i].sgx_time;
     }
@@ -237,7 +236,7 @@ void average_estimated_time() {
     printf("Elapsed time:\n");
     printf("------------\n");
     for (uint i = 0; i < node_count; i++) {
-        for (t = taem - 1; nodes_queue[t] != i; t--); // TODO: this can be improved with a memorization table
+        for (t = current_time - 1; nodes_queue[t] != i; t--); // TODO: this can be improved with a memorization table
         release_time = t + 1;
         elapsed_time[i] = release_time - nodes[i].arrival_time;
 
@@ -248,7 +247,7 @@ void average_estimated_time() {
     avg_elapsed_time /= node_count;
     printf("Avg Elapsed time: %f\n", avg_elapsed_time);
 
-    //Standard Deviation for Elapsed time
+    /* Standard Deviation for Elapsed time */
     float st_deviation = 0.0f;
     for(int i = 0; i < node_count; i++) {
         float tmp = (float) (elapsed_time[i] - avg_elapsed_time);
@@ -270,12 +269,11 @@ void pause_for_user(int promptUser, int clearStream) {
 }
 
 int main(int argc, char *argv[]) {
-    /*Variables initialization*/
-    tym = 0;
-    taem = 0;
+    /* Variables initialization */
+    current_time = 0;
     queue = queue_constructor();
 
-    int show_user_prompt = argc <= 1;
+    int show_user_prompt = argc <= 1; // FIXME: temporary
     get_input_from_user(show_user_prompt);
 
     print_sgx_table();
@@ -291,7 +289,6 @@ int main(int argc, char *argv[]) {
 #endif
 
     pause_for_user(promptUser, promptUser);
-
     queue_destructor(queue);
 
     return 0;
