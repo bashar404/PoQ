@@ -45,8 +45,9 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint node_count, nodes_queue[MAX_SIZE], taem, elapsed_time[MAX_SIZE], tym, current_time, sgx_max, arrival_time_max, tier_count, total_tiers;
-float tier_quantum_time[MAX_SIZE], sumT[MAX_SIZE], tier_active_nodes[MAX_SIZE], wait_times[MAX_SIZE];
+uint node_count, nodes_queue[MAX_SIZE], taem, tym, sgx_max, arrival_time_max, tier_count, total_tiers;
+uint elapsed_time[MAX_SIZE], current_time, wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
+float sumT[MAX_SIZE];
 
 queue_t *queue = NULL;
 
@@ -78,7 +79,7 @@ void get_input_from_user(int prompt) {
     scanf("%d", &arrival_time_max);
     for (int i = 0; i < node_count; i++) {
         int b = randint(1, sgx_max);
-        int a = randint(0, 10);
+        int a = randint(0, 10); // FIXME: what is this used for?
 	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
         nodes[i].arrival_time = at;
         nodes[i].sgx_time = b;
@@ -136,28 +137,17 @@ void calculate_quantum_time() {
 
     printf("CURRENT time: %d\n", current_time);
     for (int i = 1; i <= tier_count; i++) {
-        printf("Quantum time for tier %d: %0.1f\n", i, tier_quantum_time[i]);
-        printf("Nodes in tier %d: %0.1f\n", i, tier_active_nodes[i]);
+        printf("Quantum time for tier %d: %d\n", i, tier_quantum_time[i]);
+        printf("Nodes in tier %d: %d\n", i, tier_active_nodes[i]);
     }
 }
 
 void node_arrive() {
-    for (int i = 0; i < node_count; i++) /*when index[i=0] means AT is zero*/ {
-        if (nodes[i].arrival_time == taem) /*time=0 already declared*/ {
+    for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
+        if (nodes[i].arrival_time == taem) { /*time = 0 already declared*/
             calculate_quantum_time();
-            queue_push(queue, i); /*update_linked_list function is called*/
+            queue_push(queue, i);
         }
-    }
-}
-
-unsigned int upcoming_node() {
-    int x;
-    if (queue_is_empty(queue)) { // imagine that there is no nodes in the nodes_queue thus Q =NULL
-        return -1; // index starts from 0, -1 means no process in the nodes_queue //
-    } else {
-        x = queue_front(queue);
-        queue_pop(queue);
-        return x;
     }
 }
 
@@ -176,10 +166,10 @@ void arrange() {
             queue_pop(queue);
             int temptier = 0;
             temptier = (int) ceilf(nodes[current_node].sgx_time / (float) total_tiers);
-            float qt = tier_quantum_time[temptier];
+            int qt = (int) tier_quantum_time[temptier];
 
             if (nodes[current_node].time_left < qt) {
-                qt = (float) nodes[current_node].time_left;
+                qt = nodes[current_node].time_left;
             }
 
             for (uint i = qt; i > 0; i--) {
@@ -208,12 +198,16 @@ void show_overall_queue() {
     }
     printf("\n");
 
+    /*********************************/
+
     printf("Waiting time:\n");
     printf("------------\n");
     for (unsigned int i = 0; i < node_count; i++) {
-        printf("Waiting time for Node%d: %f\n", i, wait_times[i]);
+        printf("WT Node%d: %d\n", i, wait_times[i]);
     }
-    //counting avg wait_times
+
+    /*********************************/
+
     float average_wait_time = 0.0f;
     for (unsigned int i = 0; i < node_count; i++) {
         average_wait_time = average_wait_time + wait_times[i];
@@ -233,7 +227,7 @@ void waiting_time() {
     for (uint i = 0; i < node_count; i++) {
         for (t = taem - 1; nodes_queue[t] != i; t--);
         release_time = t + 1;
-        wait_times[i] = (float) (release_time - nodes[i].arrival_time - nodes[i].sgx_time);
+        wait_times[i] = release_time - nodes[i].arrival_time - nodes[i].sgx_time;
     }
 }
 
@@ -247,7 +241,7 @@ void average_estimated_time() {
         release_time = t + 1;
         elapsed_time[i] = release_time - nodes[i].arrival_time;
 
-        printf("Elapsed time for Node%d:\t%d\n", i, elapsed_time[i]);
+        printf("ET Node%d: %d\n", i, elapsed_time[i]);
         avg_elapsed_time += elapsed_time[i];
     }
 
