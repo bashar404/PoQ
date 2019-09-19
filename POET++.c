@@ -94,7 +94,12 @@ void get_input_from_user(int prompt) {
 void simulate_poet() {
     printf("Pass     :\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (i = 0; i < n; i++) {
-        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n", i, nodes[i].arrival_time, nodes[i].sgx_time, nodes[i].n_leadership, nodes[i].time_left);
+        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
+                i,
+                nodes[i].arrival_time,
+                nodes[i].sgx_time,
+                nodes[i].n_leadership,
+                nodes[i].time_left);
     }
 }
 
