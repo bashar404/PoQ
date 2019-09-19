@@ -45,15 +45,10 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, ct, upsgx, maxat, tiercount, tierdiv;
+uint n, i, nodes_queue[MAX_SIZE], taem = 0, q = 0, x, elapsed_time[MAX_SIZE], tym = 0, current_time, upsgx, maxat, tiercount, tierdiv;
 float QTT[MAX_SIZE], sumT[MAX_SIZE], ncT[MAX_SIZE], wait_times[MAX_SIZE];
 
-typedef struct linkedList {
-    unsigned int N; /*N --> Index*/
-    struct linkedList * next; /*pointer to the next element*/
-} Q; /*destructor*/
-
-Q * queue = NULL; /*At Initial stage there nothing in the queue */
+queue_t *queue = NULL;
 
 uint randint(int start, int end) {
     assert(start <= end);
@@ -107,29 +102,10 @@ uint time_left() {
     x = 0;
     for (int i = 0; i < n; i++) {
         // if any node has remaining time it returns true
-        if (nodes[i].time_left > 0) {
-            x = 1;
-        }
-
-        if (nodes[i].time_left == 0) {
-            nodes[i].n_leadership = 1;
-        }
+        x = (nodes[i].time_left > 0);
+        nodes[i].n_leadership = (nodes[i].time_left == 0);
     }
     return x;
-}
-
-void update_linked_list(int k) {
-    Q * n, * n1; //add at the end point//
-    n = (Q * ) malloc(sizeof(Q)); /*allocation of memory for n, malloc size of destructor*/
-    n->next = NULL; //then point to null as LL//
-    n->N = k;
-    if (queue == NULL) {
-
-        queue = n;
-    } else {
-        for (n1 = queue; n1-> next != NULL; n1 = n1-> next);
-        n1-> next = n;
-    }
 }
 
 void calculate_quantum_time() {
@@ -140,7 +116,7 @@ void calculate_quantum_time() {
 
     int temptier = 0;
     for (i = 0; i < n; i++) {
-        if (ct >= nodes[i].arrival_time) {
+        if (current_time >= nodes[i].arrival_time) {
             float uval3 = nodes[i].sgx_time;
             float tval3 = tierdiv;
             temptier = ceil(uval3/tval3);
@@ -158,7 +134,7 @@ void calculate_quantum_time() {
         }
     }
 
-    printf("CURRENT time: %d\n", ct);
+    printf("CURRENT time: %d\n", current_time);
     for (i = 1; i <= tiercount; i++) {
         printf("Quantum time for tier %d: %0.1f\n", i, QTT[i]);
         printf("Nodes in tier %d: %0.1f\n", i, ncT[i]);
@@ -169,21 +145,18 @@ void node_arrive() {
     for (int i = 0; i < n; i++) /*when index[i=0] means AT is zero*/ {
         if (nodes[i].arrival_time == taem) /*time=0 already declared*/ {
             calculate_quantum_time();
-            update_linked_list(i); /*update_linked_list function is called*/
+            queue_push(queue, i); /*update_linked_list function is called*/
         }
     }
 }
 
 unsigned int upcoming_node() {
-    Q * n;
     int x;
-    if (queue == NULL) { // imagine that there is no nodes in the nodes_queue thus Q =NULL
+    if (queue_is_empty(queue)) { // imagine that there is no nodes in the nodes_queue thus Q =NULL
         return -1; // index starts from 0, -1 means no process in the nodes_queue //
     } else {
-        x = queue-> N;
-        n = queue;
-        queue = queue-> next;
-        free(n);
+        x = queue_front(queue);
+        queue_pop(queue);
         return x;
     }
 }
@@ -197,7 +170,7 @@ void arrange() {
         // if nodes_queue is null, no node arrived, increment the time
         if (n == -1) {
             taem++;
-            ct++;
+            current_time++;
             node_arrive();
         } else { // some nodes in the nodes_queue
             int temptier2 = 0;
@@ -214,12 +187,12 @@ void arrange() {
                 nodes_queue[taem] = n;
                 taem++;
                 nodes[n].time_left--; //reducing the remaining time
-                ct++;
+                current_time++;
                 node_arrive(); // keeping track if any node join
             }
 
             if (nodes[n].time_left > 0) { // if nodes has SGX time left add to the nodes_queue at the end
-                update_linked_list(n);
+                queue_push(queue, n);
             }
         }
 
@@ -234,6 +207,8 @@ void show_overall_queue() {
     for (int i = 0; i <= taem; i++) {
         printf("[Node%d]", nodes_queue[i]);
     }
+    printf("\n");
+
     printf("Waiting time:\n");
     printf("------------\n");
     for (unsigned int i = 0; i < n; i++) {
@@ -303,6 +278,8 @@ void pause_for_user(int promptUser, int clearStream) {
 }
 
 int main(int argc, char *argv[]) {
+    queue = queue_constructor();
+
     int show_user_prompt = argc <= 1;
     get_input_from_user(show_user_prompt);
 
@@ -319,4 +296,8 @@ int main(int argc, char *argv[]) {
 #endif
 
     pause_for_user(promptUser, promptUser);
+
+    queue_destructor(queue);
+
+    return 0;
 }
