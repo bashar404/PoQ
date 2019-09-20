@@ -293,6 +293,8 @@ int main(int argc, char *argv[]) {
     int show_user_prompt = argc <= 1; // FIXME: temporary
     get_input_from_user(show_user_prompt);
 
+    ERR("********* Begins execution *********\n");
+
     print_sgx_table();
     arrange();
     waiting_time();
@@ -307,6 +309,16 @@ int main(int argc, char *argv[]) {
 
     pause_for_user(promptUser, promptUser);
     queue_destructor(queue);
+
+#ifndef NDEBUG
+    /* General invariants after execution */
+    for(int i = 0; i < node_count; i++) {
+        if (nodes[i].time_left > 0) {
+            ERR("Node %d Time left: %d\n", i, nodes[i].time_left);
+        }
+        assert(nodes[i].time_left == 0);
+    }
+#endif
 
     return 0;
 }
