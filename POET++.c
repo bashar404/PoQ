@@ -14,9 +14,16 @@
 //change this to NDEBUG if don't want to check assertions <assert(...)>
 #define DEBUG
 
+#ifndef NDEBUG
+#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
+#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
+#else
+#define ERR(...) /**/
+#endif
+
 #include "queue_t.h"
 
-#ifndef max(a, b)
+#ifndef max
 #define max(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
@@ -90,6 +97,16 @@ void get_input_from_user(int prompt) {
     tier_count = (int) ceilf(sgx_max / (float) total_tiers);
 }
 
+int calc_tier_number(node_t *node) {
+    /* Since its treated as an index, it is reduced by 1 */
+    int tier;
+    tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;
+
+    assert(0 <= tier && tier < tier_count);
+
+    return tier;
+}
+
 void print_sgx_table() {
     printf("Pass:\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (int i = 0; i < node_count; i++) {
@@ -106,29 +123,30 @@ int is_time_left() {
     int b = 0;
     for (int i = 0; i < node_count; i++) {
         // if any node has remaining time it returns true
-        b = (nodes[i].time_left > 0);
+        b = b || (nodes[i].time_left > 0);
         nodes[i].n_leadership = (nodes[i].time_left == 0); // FIXME: shouldn't this be incremented by 1?
     }
     return b;
 }
 
 void calculate_quantum_time() {
-    for (int i = 1; i <= tier_count; i++) {
+    for (int i = 0; i < tier_count; i++) {
         sumT[i] = 0;
         tier_active_nodes[i] = 0;
     }
 
-    int temptier = 0;
     for (int i = 0; i < node_count; i++) {
         if (current_time >= nodes[i].arrival_time) {
-            temptier = (int) ceilf(nodes[i].sgx_time / (float) total_tiers);
+            assert(nodes[i].sgx_time > 0);
+            int temptier = calc_tier_number(&nodes[i]);
             tier_active_nodes[temptier] += 1;
-            sumT[temptier] = sumT[temptier] + nodes[i].time_left;
+            sumT[temptier] += nodes[i].time_left;
         }
     }
 
-    for (int i = 1; i <= tier_count; i++) {
-        if (sumT[i] != 0) {
+    for (int i = 0; i < tier_count; i++) {
+        assert(sumT[i] >= 0);
+        if (sumT[i] > 0) {
             float nt = tier_active_nodes[i];
             float sval = sumT[i] / (nt*nt);
             tier_quantum_time[i] = ceilf(sval);
@@ -136,13 +154,13 @@ void calculate_quantum_time() {
     }
 
     printf("CURRENT time: %d\n", current_time);
-    for (int i = 1; i <= tier_count; i++) {
+    for (int i = 0; i < tier_count; i++) {
         printf("Quantum time for tier %d: %d\n", i, tier_quantum_time[i]);
         printf("Nodes in tier %d: %d\n", i, tier_active_nodes[i]);
     }
 }
 
-void node_arrive() {
+void check_node_arrive() {
     for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
         if (nodes[i].arrival_time == current_time) { /*time = 0 already declared*/
             calculate_quantum_time();
@@ -154,18 +172,17 @@ void node_arrive() {
 void arrange() {
     int current_node;
 
-    node_arrive();
+    check_node_arrive();
     while (is_time_left()) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
-            node_arrive();
-        } else { // some nodes in the nodes_queue
+            check_node_arrive();
+        } else { // some nodes in the queue
             current_node = queue_front(queue);
             queue_pop(queue);
 
-            int temptier = 0;
-            temptier = (int) ceilf(nodes[current_node].sgx_time / (float) total_tiers);
+            int temptier = calc_tier_number(&nodes[current_node]);
             int qt = (int) tier_quantum_time[temptier];
 
             if (nodes[current_node].time_left < qt) {
@@ -176,7 +193,7 @@ void arrange() {
                 nodes_queue[current_time] = current_node;
                 nodes[current_node].time_left--; //reducing the remaining time
                 current_time++;
-                node_arrive(); // keeping track if any node join
+                check_node_arrive(); // keeping track if any node join
             }
 
             if (nodes[current_node].time_left > 0) { // if nodes has SGX time left, then push to the queue

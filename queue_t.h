@@ -1,6 +1,13 @@
 #ifndef QUEUE_H
 #define QUEUE_H
 
+#ifndef NDEBUG
+#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
+#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
+#else
+#define ERR(...) /**/
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -34,7 +41,8 @@ queue_t* queue_constructor() {
 }
 
 int queue_is_empty(queue_t *q) {
-    assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL aswell
+    assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL as well
+    ERR("queue is empty: %d (size: %d)\n", q != NULL && q->head == NULL, (q != NULL ? (int) q->size : 0));
     return q != NULL && q->head == NULL;
 }
 
@@ -76,6 +84,7 @@ void queue_pop(queue_t *q) {
             q->tail = NULL;
             assert(q->head == NULL);
         }
+        ERR("Pops element (%d) from queue\n", t->d);
         free(t);
         q->size--;
     } else {
@@ -101,6 +110,8 @@ void queue_push(queue_t *q, data d) {
     }
 
     q->size++;
+
+    ERR("Pushes %d into the queue (size: %u)\n", d, q->size);
 
     return;
 
