@@ -196,7 +196,7 @@ void arrange() {
                 nodes_queue[current_time] = current_node;
                 nodes[current_node].time_left--; //reducing the remaining time
                 current_time++;
-                check_node_arrive(); // keeping track if any node join
+                check_node_arrive(); // keeping track if any node joins
             }
 
             if (nodes[current_node].time_left > 0) { // if nodes has SGX time left, then push to the queue
@@ -211,7 +211,7 @@ void arrange() {
 void show_overall_queue() {
     printf("Overall Queue:\n");
     printf("-------------\n");
-    for (int i = 0; i <= current_time; i++) {
+    for (int i = 0; i < current_time; i++) {
         printf("[Node%d]", nodes_queue[i]);
     }
     printf("\n");
@@ -291,6 +291,11 @@ void pause_for_user(int promptUser, int clearStream) {
 int main(int argc, char *argv[]) {
     /* Variables initialization */
     current_time = 0;
+    memset(nodes_queue, 0xff, sizeof(nodes_queue));
+    memset(elapsed_time, 0xff, sizeof(elapsed_time));
+    memset(wait_times, 0xff, sizeof(wait_times));
+    memset(tier_active_nodes, 0xff, sizeof(tier_active_nodes));
+    memset(tier_quantum_time, 0xff, sizeof(tier_quantum_time));
     queue = queue_constructor();
 
     int show_user_prompt = argc <= 1; // FIXME: temporary
