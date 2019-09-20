@@ -52,7 +52,7 @@ typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
-uint node_count, sgx_max, arrival_time_max, tier_count, total_tiers, current_time;
+uint node_count, sgx_max, arrival_time_max, total_tiers, current_time;
 uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
 float sumT[MAX_SIZE];
 
@@ -93,8 +93,6 @@ void get_input_from_user(int prompt) {
         nodes[i].n_leadership = 0;
         nodes[i].time_left = nodes[i].sgx_time;
     }
-
-    tier_count = (int) ceilf(sgx_max / (float) total_tiers);
 }
 
 int calc_tier_number(node_t *node) {
@@ -102,7 +100,12 @@ int calc_tier_number(node_t *node) {
     int tier;
     tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;
 
-    assert(0 <= tier && tier < tier_count);
+#ifndef NDEBUG
+    if (! (0 <= tier && tier < total_tiers)){
+        ERR("0 <= %d < %d\n", tier, total_tiers);
+    }
+#endif
+    assert(0 <= tier && tier < total_tiers);
 
     return tier;
 }
@@ -130,7 +133,7 @@ int is_time_left() {
 }
 
 void calculate_quantum_time() {
-    for (int i = 0; i < tier_count; i++) {
+    for (int i = 0; i < total_tiers; i++) {
         sumT[i] = 0;
         tier_active_nodes[i] = 0;
     }
@@ -144,7 +147,7 @@ void calculate_quantum_time() {
         }
     }
 
-    for (int i = 0; i < tier_count; i++) {
+    for (int i = 0; i < total_tiers; i++) {
         assert(sumT[i] >= 0);
         if (sumT[i] > 0) {
             float nt = tier_active_nodes[i];
@@ -154,7 +157,7 @@ void calculate_quantum_time() {
     }
 
     printf("CURRENT time: %d\n", current_time);
-    for (int i = 0; i < tier_count; i++) {
+    for (int i = 0; i < total_tiers; i++) {
         printf("Quantum time for tier %d: %d\n", i, tier_quantum_time[i]);
         printf("Nodes in tier %d: %d\n", i, tier_active_nodes[i]);
     }
