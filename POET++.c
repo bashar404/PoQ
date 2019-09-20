@@ -288,7 +288,52 @@ void pause_for_user(int promptUser, int clearStream) {
     getchar();
 }
 
+void test() {
+    int n = 1;
+    float stdavg, d2;
+    stdavg = d2 = 0.0f;
+
+    for(sgx_max = 2; sgx_max < 500; sgx_max++) {
+        for(total_tiers = 2; total_tiers <= sgx_max; total_tiers++) {
+            node_t node;
+            int *i = &node.sgx_time;
+            int c[total_tiers + 5];
+            memset(c, 0, sizeof(c));
+            for (*i = 1; *i <= sgx_max; (*i)++) {
+                //ERR("tier for sgxt %d = %d\n", *i, calc_tier_number(&node));
+                c[calc_tier_number(&node)]++;
+            }
+
+            int s = 0;
+            for (int i = 0; i < total_tiers + 5; i++) {
+//                ERR("tier %d: %d\n", i, c[i]);
+                s += c[i];
+            }
+
+            float avg = s / (float) total_tiers, std = 0.0f;
+            for (int i = 0; i < total_tiers; i++) {
+                std += (c[i] - avg) * (c[i] - avg);
+            }
+            std = sqrtf(std / (float)(total_tiers -1));
+
+            ERR("sgx_max = %d, tiers = %d, avg = %f, std = %f\n", sgx_max, total_tiers, avg, std);
+            assert(std < 1.0f);
+            assert(s == sgx_max);
+            stdavg += std;
+            n++;
+            d2 += (std + stdavg / (float) n) * (std - (stdavg - std) / (float)(n-1));
+        }
+    }
+
+    float stdstd = sqrtf(d2 / (float) (n-1));
+    ERR("avgstd: %f | stdstd: %f\n", stdavg / n, stdstd);
+
+    exit(1);
+}
+
 int main(int argc, char *argv[]) {
+    test();
+
     /* Variables initialization */
     current_time = 0;
     queue = queue_constructor();
