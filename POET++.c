@@ -40,15 +40,16 @@
 
 /*********************************************************************/
 
+typedef unsigned int uint;
+
 struct node {
-    int arrival_time;
-    int sgx_time;
-    int n_leadership;
-    int time_left;
+    uint arrival_time;
+    uint sgx_time;
+    uint n_leadership;
+    uint time_left;
 };
 
 typedef struct node node_t;
-typedef unsigned int uint;
 
 node_t nodes[MAX_SIZE];
 
@@ -158,8 +159,8 @@ void calculate_quantum_time() {
 
     printf("CURRENT time: %d\n", current_time);
     for (int i = 0; i < total_tiers; i++) {
-        printf("Quantum time for tier %d: %d\n", i, tier_quantum_time[i]);
-        printf("Nodes in tier %d: %d\n", i, tier_active_nodes[i]);
+        printf("Quantum time for tier %d: %u\n", i, tier_quantum_time[i]);
+        printf("Nodes in tier %d: %u\n", i, tier_active_nodes[i]);
     }
 }
 
@@ -186,11 +187,9 @@ void arrange() {
             queue_pop(queue);
 
             int temptier = calc_tier_number(&nodes[current_node]);
-            int qt = (int) tier_quantum_time[temptier];
+            uint qt = (uint) tier_quantum_time[temptier];
 
-            if (nodes[current_node].time_left < qt) {
-                qt = nodes[current_node].time_left;
-            }
+            qt = min(qt, nodes[current_node].time_left);
 
             for (uint i = qt; i > 0; i--) {
                 nodes_queue[current_time] = current_node;
@@ -221,7 +220,7 @@ void show_overall_queue() {
     printf("Waiting time:\n");
     printf("------------\n");
     for (unsigned int i = 0; i < node_count; i++) {
-        printf("WT Node%d: %d\n", i, wait_times[i]);
+        printf("WT Node%d: %u\n", i, wait_times[i]);
     }
 
     /*********************************/
@@ -260,7 +259,7 @@ void average_estimated_time() {
         release_time = t + 1;
         elapsed_time[i] = release_time - nodes[i].arrival_time;
 
-        printf("ET Node%d: %d\n", i, elapsed_time[i]);
+        printf("ET Node%d: %u\n", i, elapsed_time[i]);
         avg_elapsed_time += elapsed_time[i];
     }
 
@@ -291,11 +290,13 @@ void pause_for_user(int promptUser, int clearStream) {
 int main(int argc, char *argv[]) {
     /* Variables initialization */
     current_time = 0;
-    memset(nodes_queue, 0xff, sizeof(nodes_queue));
-    memset(elapsed_time, 0xff, sizeof(elapsed_time));
-    memset(wait_times, 0xff, sizeof(wait_times));
-    memset(tier_active_nodes, 0xff, sizeof(tier_active_nodes));
-    memset(tier_quantum_time, 0xff, sizeof(tier_quantum_time));
+    
+    memset(nodes_queue, 0, sizeof(nodes_queue));
+    memset(elapsed_time, 0, sizeof(elapsed_time));
+    memset(wait_times, 0, sizeof(wait_times));
+    memset(tier_active_nodes, 0, sizeof(tier_active_nodes));
+    memset(tier_quantum_time, 0, sizeof(tier_quantum_time));
+
     queue = queue_constructor();
 
     int show_user_prompt = argc <= 1; // FIXME: temporary
