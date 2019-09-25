@@ -13,6 +13,7 @@ struct socket_t {
     int type;
     int protocol;
     int opt;
+    int is_closed;
 };
 
 typedef struct socket_t socket_t;
@@ -20,9 +21,10 @@ typedef struct socket_t socket_t;
 socket_t* socket_constructor(int domain, int type, int protocol, char *ip, int port);
 int socket_bind(socket_t *soc);
 int socket_listen(socket_t *soc, int max_connections);
-int socket_accept(socket_t *soc);
+socket_t* socket_accept(socket_t *soc);
 int socket_read(socket_t *soc, void *buffer, int buffer_len);
-int socket_send(socket_t *soc, const void *buffer, int buffer_len);
+int socket_send(socket_t *soc, const void *buffer, size_t buffer_len);
+void socket_close(socket_t *soc);
 void socket_destructor(socket_t *soc);
 
 #endif //POET_CODE_SOCKET_T_H

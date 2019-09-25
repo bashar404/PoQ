@@ -6,6 +6,11 @@
 #include <time.h>
 #include <assert.h>
 #include <pthread.h>
+#ifndef _WIN32
+#include <unistd.h>
+#else
+#include <Windows.h>
+#endif
 
 #include "socket_t.h"
 #include "queue_t.h"
@@ -28,14 +33,21 @@
 #define PROTOCOL 0
 #define PORT 9000
 #define IP "127.0.0.1"
+#define BUFFER_SZ 1024
+
+struct thread_tuple {
+    pthread_t *thread;
+    void *data;
+};
 
 /********** GLOBAL VARIABLES **********/
 pthread_t threads[MAX_THREADS];
+queue_t *threads_queue = NULL;
+pthread_mutex_t threads_queue_lock;
 
 queue_t *queue = NULL;
 pthread_mutex_t queue_lock;
 
-// TODO: add sgx table struct
 node_t sgx_table[MAX_NODES];
 pthread_mutex_t sgx_table_lock;
 
@@ -46,10 +58,11 @@ int current_time;
 
 void global_variables_initialization() {
     queue = queue_constructor();
+    threads_queue = queue_constructor();
     server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, IP, PORT);
 
-    if (queue == NULL || server_socket == NULL) {
-        perror("queue or socket constructor");
+    if (queue == NULL || server_socket == NULL || threads_queue == NULL) {
+        perror("queue, socket or threads_queue constructor");
         goto error;
     }
 
@@ -68,7 +81,15 @@ void global_variables_initialization() {
         goto error;
     }
 
+    if (pthread_mutex_init(&threads_queue_lock, NULL) != FALSE) {
+        perror("threads_queue_lock init");
+        goto error;
+    }
+
     current_time = 0;
+    for(int i = 0; i < MAX_THREADS; i++) {
+        queue_push(threads_queue, threads+i);
+    }
 
     return;
 
@@ -78,11 +99,43 @@ void global_variables_initialization() {
 }
 
 void global_variables_destruction() {
-    queue_destructor(queue);
+    queue_destructor(queue, 1);
+    queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
 
     pthread_mutex_destroy(&queue_lock);
     pthread_mutex_destroy(&sgx_table_lock);
+}
+
+int received_termination_signal() { // dummy function
+    return FALSE;
+}
+
+void* process_new_node(void *arg) {
+    struct thread_tuple* curr_thread = (struct thread_tuple*) arg;
+    socket_t *node_socket = (socket_t *) curr_thread->data;
+    ERR("Processing node in thread: %p and socket fd: %d\n", curr_thread->thread, node_socket->file_descriptor);
+
+    // TODO
+
+    char buffer[BUFFER_SZ];
+    socket_read(node_socket, buffer, BUFFER_SZ);
+
+    buffer[BUFFER_SZ-1] = '\0';
+    pthread_t current_thread = pthread_self();
+    printf("thread: %lu | received msg: '%s'\n", current_thread, buffer);
+
+    char *s = "su puta madre es asi, cierto?";
+    strcpy(buffer, s);
+
+    socket_send(node_socket, buffer, strlen(buffer));
+
+    socket_destructor(node_socket);
+
+    pthread_mutex_lock(&threads_queue_lock);
+    queue_push(threads_queue, curr_thread->thread);
+    pthread_mutex_unlock(&threads_queue_lock);
+    free(curr_thread);
 }
 
 int main(int argc, char *argv[]) {
@@ -90,9 +143,40 @@ int main(int argc, char *argv[]) {
 
     global_variables_initialization();
 
-    printf("queue: %p | server_socket: %p\n", queue, server_socket);
+    ERR("queue: %p | server_socket: %p\n", queue, server_socket);
+
+    if (socket_listen(server_socket, MAX_THREADS) != FALSE) {
+        goto error;
+    }
+    ERR("Starting to listen\n");
+
+    while(received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
+        socket_t *new_socket = socket_accept(server_socket);
+        if (new_socket == NULL) {
+            fprintf(stderr, "Error accepting socket connection\n");
+            continue;
+        }
+
+        while(queue_is_empty(threads_queue)) { // FIXME: remove active waiting of threads
+            // nothing
+        }
+
+        pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
+        queue_pop(threads_queue);
+        struct thread_tuple * curr_thread = malloc(sizeof(struct thread_tuple));
+        curr_thread->thread = next_thread;
+        curr_thread->data = new_socket;
+        int error = pthread_create(next_thread, NULL, &process_new_node, curr_thread);
+        if (error != FALSE) {
+            fprintf(stderr, "A thread could not be created: %p\n", next_thread);
+        }
+    }
 
     global_variables_destruction();
-
     return 0;
+
+    error:
+    fprintf(stderr, "server finished with error\n");
+    global_variables_destruction();
+    return EXIT_FAILURE;
 }

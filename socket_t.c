@@ -10,6 +10,13 @@
 #include <Windows.h>
 #endif
 
+#ifndef NDEBUG
+#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
+#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
+#else
+#define ERR(...) /**/
+#endif
+
 #include "socket_t.h"
 
 #define DEFAULT_ADDRESS INADDR_ANY
@@ -76,17 +83,22 @@ int socket_listen(socket_t *soc, int max_connections){
     return -1;
 }
 
-int socket_accept(socket_t *soc){
+socket_t* socket_accept(socket_t *soc){
     assert(soc != NULL);
 
-    int new_socket;
-    if ((new_socket = accept(soc->file_descriptor, (struct sockaddr *)&(soc->address),
-                             (socklen_t*)&(soc->addrlen))) <0) goto error;
+    int new_socket_fd;
+    if ((new_socket_fd = accept(soc->file_descriptor, (struct sockaddr *)&(soc->address),
+                                (socklen_t*)&(soc->addrlen))) <0) goto error;
+
+    socket_t *new_socket = malloc(sizeof(socket_t));
+    if (new_socket == NULL) goto error;
+    memcpy(new_socket, soc, sizeof(socket_t));
+    new_socket->file_descriptor = new_socket_fd;
 
     return new_socket;
     error:
     perror("socket accept");
-    return new_socket;
+    return NULL;
 }
 
 int socket_read(socket_t *soc, void *buffer, int buffer_len){
@@ -99,7 +111,7 @@ int socket_read(socket_t *soc, void *buffer, int buffer_len){
     return valread;
 }
 
-int socket_send(socket_t *soc, const void *buffer, int buffer_len){
+int socket_send(socket_t *soc, const void *buffer, size_t buffer_len){
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
@@ -107,8 +119,19 @@ int socket_send(socket_t *soc, const void *buffer, int buffer_len){
     return send(soc->file_descriptor, buffer, buffer_len, 0);
 }
 
+void socket_close(socket_t *soc) {
+    assert(soc != NULL);
+    ERR("Closing socket: %d\n", soc->file_descriptor);
+
+    if (soc->is_closed == 0) {
+        close(soc->file_descriptor);
+        soc->is_closed = 1;
+    }
+}
+
 void socket_destructor(socket_t *soc){
     assert(soc != NULL);
 
+    socket_close(soc);
     free(soc);
 }

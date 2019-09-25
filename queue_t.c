@@ -57,7 +57,7 @@ void queue_pop(queue_t *q) {
             q->tail = NULL;
             assert(q->head == NULL);
         }
-        ERR("Pops element (%d) from queue\n", *((unsigned int*)t->d));
+        ERR("Pops element (%p) from queue\n", t->d);
         free(t);
         q->size--;
     } else {
@@ -84,7 +84,7 @@ void queue_push(queue_t *q, void *d) {
 
     q->size++;
 
-    ERR("Pushes %d into the queue (size: %lu)\n", *((int *)d), q->size);
+    ERR("Pushes %p into the queue (size: %lu)\n", d, q->size);
 
     return;
 
