@@ -1,7 +1,6 @@
 /*H**********************************************************************
  * FILENAME : SGX1.c
  * ORGANIZATION : ISPM Research Lab
- * DESCRIPTION: Maximum Node 100, Anything with start from time=0,
  *H*/
 #include <stdio.h>
 #include <stdlib.h>
