@@ -14,6 +14,8 @@
 
 #define DEFAULT_ADDRESS INADDR_ANY
 
+// TODO: set C preprocessor conditionals for SSL
+
 socket_t* socket_constructor(int domain, int type, int protocol, char *ip, int port) {
     socket_t *s = (socket_t *) malloc(sizeof(socket_t));
     if (s == NULL) goto error;

@@ -7,7 +7,7 @@
 
 struct socket_t {
     struct sockaddr_in address;
-    int addrlen;
+    socklen_t addrlen;
     int file_descriptor;
     int domain;
     int type;

@@ -21,6 +21,7 @@
 #endif
 
 #include "queue_t.h"
+#include "poet_node_t.h"
 
 #ifndef max
 #define max(a,b) \
@@ -38,17 +39,6 @@
 #define MAX_SIZE 10000
 
 /*********************************************************************/
-
-typedef unsigned int uint;
-
-struct node {
-    uint arrival_time;
-    uint sgx_time;
-    uint n_leadership;
-    uint time_left;
-};
-
-typedef struct node node_t;
 
 node_t nodes[MAX_SIZE];
 
