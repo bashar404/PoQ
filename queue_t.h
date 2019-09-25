@@ -13,10 +13,8 @@
 #define ERR(...) /**/
 #endif
 
-typedef unsigned int data;
-
 struct item {
-    data d;
+    void *d;
     struct item *next;
 };
 
@@ -31,12 +29,12 @@ typedef struct queue queue_t;
 
 queue_t* queue_constructor();
 int queue_is_empty(queue_t *q);
-data queue_front(queue_t *q);
-data queue_back(queue_t *q);
+void* queue_front(queue_t *q);
+void* queue_back(queue_t *q);
 void queue_pop(queue_t *q);
-void queue_push(queue_t *q, data d);
+void queue_push(queue_t *q, void* d);
 void queue_print(queue_t *q);
 size_t queue_size(queue_t *q);
-void queue_destructor(queue_t *q);
+void queue_destructor(queue_t *q, int deallocate);
 
 #endif

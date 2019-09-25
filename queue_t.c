@@ -15,11 +15,11 @@ queue_t* queue_constructor() {
 
 int queue_is_empty(queue_t *q) {
     assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL as well
-    ERR("queue is empty: %d (size: %d)\n", q != NULL && q->head == NULL, (q != NULL ? (int) q->size : 0));
+    ERR("queue is empty: %s (size: %d)\n", (q != NULL && q->head == NULL ? "true" : "false"), (q != NULL ? (int) q->size : 0));
     return q != NULL && q->head == NULL;
 }
 
-data queue_front(queue_t *q) {
+void* queue_front(queue_t *q) {
     assert(q != NULL);
 
     if (q->head != NULL) {
@@ -33,7 +33,7 @@ data queue_front(queue_t *q) {
     return 0;
 }
 
-data queue_back(queue_t *q) {
+void* queue_back(queue_t *q) {
     assert(q != NULL);
 
     if (q->tail != NULL) {
@@ -57,7 +57,7 @@ void queue_pop(queue_t *q) {
             q->tail = NULL;
             assert(q->head == NULL);
         }
-        ERR("Pops element (%d) from queue\n", t->d);
+        ERR("Pops element (%d) from queue\n", *((unsigned int*)t->d));
         free(t);
         q->size--;
     } else {
@@ -65,7 +65,7 @@ void queue_pop(queue_t *q) {
     }
 }
 
-void queue_push(queue_t *q, data d) {
+void queue_push(queue_t *q, void *d) {
     assert(q != NULL);
 
     item_t *new_item = malloc(sizeof(item_t));
@@ -84,7 +84,7 @@ void queue_push(queue_t *q, data d) {
 
     q->size++;
 
-    ERR("Pushes %d into the queue (size: %u)\n", d, q->size);
+    ERR("Pushes %d into the queue (size: %lu)\n", *((int *)d), q->size);
 
     return;
 
@@ -101,7 +101,7 @@ void queue_print(queue_t *q) {
     }
 
     for(item_t *i = q->head; i != NULL; i=i->next) {
-        printf("[%u]", i->d);
+        printf("[%u]", *((unsigned int *) i->d));
     }
     printf("\n");
 }
@@ -111,10 +111,13 @@ size_t queue_size(queue_t *q) {
     return q->size;
 }
 
-void queue_destructor(queue_t *q) {
+void queue_destructor(queue_t *q, int deallocate) {
     assert(q != NULL);
 
     while(!queue_is_empty(q)) {
+        if (deallocate != 0) {
+            free(queue_front(q));
+        }
         queue_pop(q);
     }
 

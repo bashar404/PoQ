@@ -157,7 +157,9 @@ void check_node_arrive() {
     for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
         if (nodes[i].arrival_time == current_time) { /*time = 0 already declared*/
             calculate_quantum_time();
-            queue_push(queue, i);
+            int * i_ptr = malloc(sizeof(int));
+            *i_ptr = i;
+            queue_push(queue, i_ptr);
         }
     }
 }
@@ -172,7 +174,8 @@ void arrange() {
             current_time++;
             check_node_arrive();
         } else { // some nodes in the queue
-            current_node = queue_front(queue);
+            current_node = *((int*)queue_front(queue));
+            free(queue_front(queue));
             queue_pop(queue);
 
             int temptier = calc_tier_number(&nodes[current_node]);
@@ -188,7 +191,9 @@ void arrange() {
             }
 
             if (nodes[current_node].time_left > 0) { // if nodes has SGX time left, then push to the queue
-                queue_push(queue, current_node);
+                int* curr_node = malloc(sizeof(int));
+                *curr_node = current_node;
+                queue_push(queue, curr_node);
             }
         }
 
@@ -306,7 +311,7 @@ int main(int argc, char *argv[]) {
 #endif
 
     pause_for_user(promptUser, promptUser);
-    queue_destructor(queue);
+    queue_destructor(queue, 1);
 
 #ifndef NDEBUG
     /* General invariants after execution */
