@@ -38,6 +38,7 @@ int main(int argc, char *argv[]) {
     ERR("Connection established\n");
 
     char buffer[BUFFER_SZ];
+    srand(time(NULL));
     int l = rand() % 1000;
     for(int i = 0; i < l; i++) {
         sprintf(buffer, "iteration %d", i);
