@@ -32,7 +32,7 @@
 #define TYPE SOCK_STREAM
 #define PROTOCOL 0
 #define PORT 9000
-#define IP "0.0.0.0"
+#define SERVER_IP "0.0.0.0"
 #define BUFFER_SZ 1024
 
 struct thread_tuple {
@@ -59,7 +59,7 @@ int current_time;
 void global_variables_initialization() {
     queue = queue_constructor();
     threads_queue = queue_constructor();
-    server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, IP, PORT);
+    server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
 
     if (queue == NULL || server_socket == NULL || threads_queue == NULL) {
         perror("queue, socket or threads_queue constructor");
@@ -119,17 +119,22 @@ void* process_new_node(void *arg) {
     // TODO
 
     char buffer[BUFFER_SZ];
-    socket_read(node_socket, buffer, BUFFER_SZ);
-
-    buffer[BUFFER_SZ-1] = '\0';
     pthread_t current_thread = pthread_self();
-    printf("thread: %lu | received msg: '%s'\n", current_thread, buffer);
 
-//    pthread_mutex_lock(&threads_queue_lock);
-    sprintf(buffer, "queue sz: %lu\n", queue_size(threads_queue));
-//    pthread_mutex_unlock(&threads_queue_lock);
+    int socket_is_open;
+    do {
+        memset(buffer, 0, BUFFER_SZ);
+        socket_is_open = socket_read(node_socket, buffer, BUFFER_SZ);
 
-    socket_send(node_socket, buffer, strlen(buffer));
+        buffer[BUFFER_SZ - 1] = '\0';
+        printf("thread: %lu | received msg: '%s'\n", current_thread, buffer);
+
+        pthread_mutex_lock(&threads_queue_lock);
+        sprintf(buffer, "queue sz: %lu\n", queue_size(threads_queue));
+        pthread_mutex_unlock(&threads_queue_lock);
+
+        socket_send(node_socket, buffer, strlen(buffer));
+    } while(socket_is_open != FALSE);
 
     socket_destructor(node_socket);
 

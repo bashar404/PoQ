@@ -101,6 +101,20 @@ socket_t* socket_accept(socket_t *soc){
     return NULL;
 }
 
+int socket_connect(socket_t *soc) {
+    assert(soc != NULL);
+
+    if (connect(soc->file_descriptor, (struct sockaddr *) &(soc->address), soc->addrlen) != 0) {
+        goto error;
+    }
+
+    return 0;
+
+    error:
+    perror("socket connect");
+    return -1;
+}
+
 int socket_read(socket_t *soc, void *buffer, int buffer_len){
     assert(soc != NULL);
     assert(buffer != NULL);
@@ -121,12 +135,9 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len){
 
 void socket_close(socket_t *soc) {
     assert(soc != NULL);
-    ERR("Closing socket: %d\n", soc->file_descriptor);
+    ERR("closing socket: %d\n", soc->file_descriptor);
 
-    if (soc->is_closed == 0) {
-        close(soc->file_descriptor);
-        soc->is_closed = 1;
-    }
+    close(soc->file_descriptor);
 }
 
 void socket_destructor(socket_t *soc){

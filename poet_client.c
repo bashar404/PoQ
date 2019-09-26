@@ -15,10 +15,42 @@
 #define ERR(...) /**/
 #endif
 
-int main() {
-    printf("Client: Not implemented yet");
+#define DOMAIN AF_INET
+#define TYPE SOCK_STREAM
+#define PROTOCOL 0
+#define PORT 9000
+#define SERVER_IP "127.0.0.1"
+#define BUFFER_SZ 1024
 
-    return 0;
+socket_t * node_socket = NULL;
+
+void global_variable_initialization() {
+    node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
+}
+
+int main(int argc, char *argv[]) {
+    // TODO: receive parameters by command line
+
+    global_variable_initialization();
+
+    ERR("trying to establish connection with server\n");
+    socket_connect(node_socket);
+    ERR("Connection established\n");
+
+    char buffer[BUFFER_SZ];
+    int l = rand() % 1000;
+    for(int i = 0; i < l; i++) {
+        sprintf(buffer, "iteration %d", i);
+        socket_send(node_socket, buffer, strlen(buffer));
+
+        socket_read(node_socket, buffer, BUFFER_SZ);
+        buffer[BUFFER_SZ - 1] = '\0';
+        printf("Response: %s\n", buffer);
+    }
+
+    socket_destructor(node_socket);
+
+    return EXIT_SUCCESS;
 }
 
 // TODO
