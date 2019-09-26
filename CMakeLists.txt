@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD 11)
 
 include_directories(.)
 
+#add_compile_definitions(NDEBUG)
+
 add_executable(poet_main
         POET++.c queue_t.h socket_t.h socket_t.c queue_t.c
         poet_node_t.h)

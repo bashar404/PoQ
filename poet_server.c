@@ -32,7 +32,7 @@
 #define TYPE SOCK_STREAM
 #define PROTOCOL 0
 #define PORT 9000
-#define IP "127.0.0.1"
+#define IP "0.0.0.0"
 #define BUFFER_SZ 1024
 
 struct thread_tuple {
@@ -125,8 +125,9 @@ void* process_new_node(void *arg) {
     pthread_t current_thread = pthread_self();
     printf("thread: %lu | received msg: '%s'\n", current_thread, buffer);
 
-    char *s = "su puta madre es asi, cierto?";
-    strcpy(buffer, s);
+//    pthread_mutex_lock(&threads_queue_lock);
+    sprintf(buffer, "queue sz: %lu\n", queue_size(threads_queue));
+//    pthread_mutex_unlock(&threads_queue_lock);
 
     socket_send(node_socket, buffer, strlen(buffer));
 
@@ -148,7 +149,7 @@ int main(int argc, char *argv[]) {
     if (socket_listen(server_socket, MAX_THREADS) != FALSE) {
         goto error;
     }
-    ERR("Starting to listen\n");
+    printf("Starting to listen\n");
 
     while(received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_accept(server_socket);
@@ -161,8 +162,10 @@ int main(int argc, char *argv[]) {
             // nothing
         }
 
+        pthread_mutex_lock(&threads_queue_lock);
         pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
+        pthread_mutex_unlock(&threads_queue_lock);
         struct thread_tuple * curr_thread = malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
