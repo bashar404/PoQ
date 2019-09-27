@@ -6,6 +6,7 @@
 #include <time.h>
 #include <assert.h>
 #include <pthread.h>
+#include <errno.h>
 #ifndef _WIN32
 #include <unistd.h>
 #else
@@ -43,10 +44,8 @@ struct thread_tuple {
 /********** GLOBAL VARIABLES **********/
 pthread_t threads[MAX_THREADS];
 queue_t *threads_queue = NULL;
-pthread_mutex_t threads_queue_lock;
 
 queue_t *queue = NULL;
-pthread_mutex_t queue_lock;
 
 node_t sgx_table[MAX_NODES];
 pthread_mutex_t sgx_table_lock;
@@ -71,18 +70,8 @@ void global_variables_initialization() {
         goto error;
     }
 
-    if (pthread_mutex_init(&queue_lock, NULL) != FALSE) {
-        perror("queue_lock init");
-        goto error;
-    }
-
     if (pthread_mutex_init(&sgx_table_lock, NULL) != FALSE) {
         perror("sgx_table_lock init");
-        goto error;
-    }
-
-    if (pthread_mutex_init(&threads_queue_lock, NULL) != FALSE) {
-        perror("threads_queue_lock init");
         goto error;
     }
 
@@ -103,7 +92,6 @@ void global_variables_destruction() {
     queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
 
-    pthread_mutex_destroy(&queue_lock);
     pthread_mutex_destroy(&sgx_table_lock);
 }
 
@@ -114,33 +102,41 @@ int received_termination_signal() { // dummy function
 void* process_new_node(void *arg) {
     struct thread_tuple* curr_thread = (struct thread_tuple*) arg;
     socket_t *node_socket = (socket_t *) curr_thread->data;
-    ERR("Processing node in thread: %p and socket fd: %d\n", curr_thread->thread, node_socket->file_descriptor);
+    ERR("Processing node in thread: %p and socket fd: %d\n", curr_thread->thread, node_socket->socket_descriptor);
 
     // TODO
 
-    char buffer[BUFFER_SZ];
-    pthread_t current_thread = pthread_self();
+    char buffer[BUFFER_SZ+1];
 
-    int socket_is_open;
+    int socket_state = 0;
     do {
-        memset(buffer, 0, BUFFER_SZ);
-        socket_is_open = socket_read(node_socket, buffer, BUFFER_SZ);
+        ERR("(%p)<%d\n", curr_thread->thread, 1);
+        memset(buffer, 0, sizeof(buffer));
+        socket_state = socket_recv(node_socket, buffer, BUFFER_SZ);
+        ERR("(%p)<%d\n", curr_thread->thread, 2);
+        if (socket_state <= 0) goto error;
 
-        buffer[BUFFER_SZ - 1] = '\0';
-        printf("thread: %lu | received msg: '%s'\n", current_thread, buffer);
+        buffer[socket_state - 1] = '\0';
+        printf("thread: %p | received msg: '%s'\n", curr_thread->thread, buffer);
 
-        pthread_mutex_lock(&threads_queue_lock);
+        ERR("(%p)<%d\n", curr_thread->thread, 3);
         sprintf(buffer, "queue sz: %lu\n", queue_size(threads_queue));
-        pthread_mutex_unlock(&threads_queue_lock);
+        ERR("(%p)<%d\n", curr_thread->thread, 4);
 
-        socket_send(node_socket, buffer, strlen(buffer));
-    } while(socket_is_open != FALSE);
+        socket_state = socket_send(node_socket, buffer, strlen(buffer));
+        ERR("(%p)<%d\n", curr_thread->thread, 5);
+    } while(socket_state > 0);
 
+    goto terminate;
+
+    error:
+    fprintf(stderr, "An error ocurred with socket %d\nclosing connection with socket %d\n",
+            node_socket->socket_descriptor, node_socket->socket_descriptor);
+    perror("processing node message");
+
+    terminate:
     socket_destructor(node_socket);
-
-    pthread_mutex_lock(&threads_queue_lock);
     queue_push(threads_queue, curr_thread->thread);
-    pthread_mutex_unlock(&threads_queue_lock);
     free(curr_thread);
 }
 
@@ -163,14 +159,13 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        while(queue_is_empty(threads_queue)) { // FIXME: remove active waiting of threads
-            // nothing
+        int checking = 1;
+        while(checking) { // FIXME: remove active waiting of threads
+            checking = queue_is_empty(threads_queue);
         }
 
-        pthread_mutex_lock(&threads_queue_lock);
         pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
-        pthread_mutex_unlock(&threads_queue_lock);
         struct thread_tuple * curr_thread = malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;

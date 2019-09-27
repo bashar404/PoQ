@@ -6,49 +6,75 @@ queue_t* queue_constructor() {
 
     memset(q, 0, sizeof(queue_t));
 
+    q->lock = malloc(sizeof(pthread_mutex_t));
+    if (q->lock == NULL) goto error;
+    memset(q->lock, 0, sizeof(pthread_mutex_t));
+    if (pthread_mutex_init(q->lock, NULL) != 0) {
+        perror("queue_lock init");
+        goto error;
+    }
+
     return q;
 
     error:
     fprintf(stderr, "Could not allocate memory for queue\n");
+    if (q != NULL && q->lock != NULL) free(q->lock);
+    if (q != NULL) free(q);
     return NULL;
 }
 
 int queue_is_empty(queue_t *q) {
+    assert(q != NULL && q->lock != NULL);
+    pthread_mutex_lock(q->lock);
     assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL as well
     ERR("queue is empty: %s (size: %d)\n", (q != NULL && q->head == NULL ? "true" : "false"), (q != NULL ? (int) q->size : 0));
-    return q != NULL && q->head == NULL;
+    int r = q != NULL && q->head == NULL;
+    pthread_mutex_unlock(q->lock);
+    return r;
 }
 
 void* queue_front(queue_t *q) {
-    assert(q != NULL);
+    assert(q != NULL && q->lock != NULL);
+
+    pthread_mutex_lock(q->lock);
 
     if (q->head != NULL) {
-        return q->head->d;
+        void* d = q->head->d;
+        pthread_mutex_unlock(q->lock);
+        return d;
     } else {
-        goto error1;
+        goto error;
     }
 
-    error1:
+    error:
+    pthread_mutex_unlock(q->lock);
     fprintf(stderr, "The queue is empty\n");
-    return 0;
+    return NULL;
 }
 
 void* queue_back(queue_t *q) {
-    assert(q != NULL);
+    assert(q != NULL && q->lock != NULL);
+
+    pthread_mutex_lock(q->lock);
 
     if (q->tail != NULL) {
-        return q->tail->d;
+        void *d = q->tail->d;
+        pthread_mutex_unlock(q->lock);
+        return d;
     } else {
-        goto error1;
+        goto error;
     }
 
-    error1:
+    error:
+    pthread_mutex_unlock(q->lock);
     fprintf(stderr, "The queue is empty\n");
-    return 0;
+    return NULL;
 }
 
 void queue_pop(queue_t *q) {
-    assert(q != NULL);
+    assert(q != NULL && q->lock != NULL);
+
+    pthread_mutex_lock(q->lock);
 
     if (q->head != NULL) {
         item_t *t = q->head;
@@ -63,13 +89,17 @@ void queue_pop(queue_t *q) {
     } else {
         assert(q->tail == NULL);
     }
+
+    pthread_mutex_unlock(q->lock);
 }
 
 void queue_push(queue_t *q, void *d) {
-    assert(q != NULL);
+    assert(q != NULL && q->lock != NULL);
+
+    pthread_mutex_lock(q->lock);
 
     item_t *new_item = malloc(sizeof(item_t));
-    if (new_item == NULL) goto error1;
+    if (new_item == NULL) goto error;
     memset(new_item, 0, sizeof(item_t));
 
     new_item->d = d;
@@ -84,11 +114,14 @@ void queue_push(queue_t *q, void *d) {
 
     q->size++;
 
+    pthread_mutex_unlock(q->lock);
+
     ERR("Pushes %p into the queue (size: %lu)\n", d, q->size);
 
     return;
 
-    error1:
+    error:
+    pthread_mutex_unlock(q->lock);
     fprintf(stderr, "Could not allocate new item into queue\n");
 }
 
@@ -100,19 +133,26 @@ void queue_print(queue_t *q) {
         return;
     }
 
+    pthread_mutex_lock(q->lock);
     for(item_t *i = q->head; i != NULL; i=i->next) {
         printf("[%u]", *((unsigned int *) i->d));
     }
+    pthread_mutex_unlock(q->lock);
     printf("\n");
 }
 
 size_t queue_size(queue_t *q) {
     assert(q != NULL);
-    return q->size;
+    pthread_mutex_lock(q->lock);
+    int r = q->size;
+    pthread_mutex_unlock(q->lock);
+    return r;
 }
 
 void queue_destructor(queue_t *q, int deallocate) {
     assert(q != NULL);
+
+    // XXX: maybe put a destruction state variable to say that is destroying the object?
 
     while(!queue_is_empty(q)) {
         if (deallocate != 0) {
@@ -120,6 +160,9 @@ void queue_destructor(queue_t *q, int deallocate) {
         }
         queue_pop(q);
     }
+
+    pthread_mutex_destroy(q->lock);
+//    free(q->lock);
 
     free(q);
 }

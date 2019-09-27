@@ -28,6 +28,10 @@ void global_variable_initialization() {
     node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
 }
 
+void global_variable_destructors() {
+    socket_destructor(node_socket);
+}
+
 int main(int argc, char *argv[]) {
     // TODO: receive parameters by command line
 
@@ -39,17 +43,17 @@ int main(int argc, char *argv[]) {
 
     char buffer[BUFFER_SZ];
     srand(time(NULL));
-    int l = rand() % 1000;
+    int l = rand() % 10000;
     for(int i = 0; i < l; i++) {
         sprintf(buffer, "iteration %d", i);
         socket_send(node_socket, buffer, strlen(buffer));
 
-        socket_read(node_socket, buffer, BUFFER_SZ);
+        socket_recv(node_socket, buffer, BUFFER_SZ);
         buffer[BUFFER_SZ - 1] = '\0';
         printf("Response: %s\n", buffer);
     }
 
-    socket_destructor(node_socket);
+    global_variable_destructors();
 
     return EXIT_SUCCESS;
 }

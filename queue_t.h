@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -22,6 +23,7 @@ struct queue {
     size_t size;
     struct item *head;
     struct item *tail;
+    pthread_mutex_t *lock;
 };
 
 typedef struct item item_t;
