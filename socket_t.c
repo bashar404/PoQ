@@ -4,10 +4,10 @@
 #include <sys/socket.h>
 #include <assert.h>
 #include <stdlib.h>
-#ifndef _WIN32
-#include <unistd.h>
-#else
+#ifdef _WIN32
 #include <Windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #ifndef NDEBUG
@@ -126,12 +126,20 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len){
     return valread;
 }
 
+int socket_get_message(socket_t *soc, void **buffer) {
+    // TODO
+}
+
 int socket_send(socket_t *soc, const void *buffer, size_t buffer_len){
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
     return send(soc->socket_descriptor, buffer, buffer_len, 0);
+}
+
+int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
+    // TODO
 }
 
 void socket_close(socket_t *soc) {

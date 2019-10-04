@@ -102,42 +102,42 @@ int received_termination_signal() { // dummy function
 void* process_new_node(void *arg) {
     struct thread_tuple* curr_thread = (struct thread_tuple*) arg;
     socket_t *node_socket = (socket_t *) curr_thread->data;
-    ERR("Processing node in thread: %p and socket fd: %d\n", curr_thread->thread, node_socket->socket_descriptor);
+    ERR("Processing node in thread: %p and socket %3d\n", curr_thread->thread, node_socket->socket_descriptor);
 
     // TODO
 
-    char buffer[BUFFER_SZ+1];
+    char *method_str = "method:";
+    void *buffer = malloc(BUFFER_SZ+1);
 
     int socket_state = 0;
     do {
-        ERR("(%p)<%d\n", curr_thread->thread, 1);
         memset(buffer, 0, sizeof(buffer));
         socket_state = socket_recv(node_socket, buffer, BUFFER_SZ);
-        ERR("(%p)<%d\n", curr_thread->thread, 2);
         if (socket_state <= 0) goto error;
 
-        buffer[socket_state - 1] = '\0';
-        printf("thread: %p | received msg: '%s'\n", curr_thread->thread, buffer);
+        if (socket_state > strlen(method_str)) {
+            char method[BUFFER_SZ];
+            sscanf(buffer, "method:%s\r\n", method);
 
-        ERR("(%p)<%d\n", curr_thread->thread, 3);
-        sprintf(buffer, "queue sz: %lu\n", queue_size(threads_queue));
-        ERR("(%p)<%d\n", curr_thread->thread, 4);
+        }
 
         socket_state = socket_send(node_socket, buffer, strlen(buffer));
-        ERR("(%p)<%d\n", curr_thread->thread, 5);
     } while(socket_state > 0);
 
     goto terminate;
 
     error:
-    fprintf(stderr, "An error ocurred with socket %d\nclosing connection with socket %d\n",
+    fprintf(stderr, "An error occurred with socket or was closed unexpectedly %d\nclosing connection with socket %d\n",
             node_socket->socket_descriptor, node_socket->socket_descriptor);
-    perror("processing node message");
 
     terminate:
+    free(buffer);
+
     socket_destructor(node_socket);
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
+
+    return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
     }
 
     global_variables_destruction();
-    return 0;
+    return EXIT_SUCCESS;
 
     error:
     fprintf(stderr, "server finished with error\n");
