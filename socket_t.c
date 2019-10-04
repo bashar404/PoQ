@@ -1,9 +1,10 @@
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <math.h>
 #ifdef _WIN32
 #include <Windows.h>
 #else
@@ -126,8 +127,62 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len){
     return valread;
 }
 
-int socket_get_message(socket_t *soc, void **buffer) {
-    // TODO
+int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
+    assert(soc != NULL);
+    assert(buffer != NULL);
+    assert(buff_size != NULL);
+
+    char num_buff[MSG_BYTES_SIZE + 1];
+    memset(num_buff, 0, sizeof(num_buff));
+    size_t buffer_size = 0;
+
+    int valread = socket_recv(soc, num_buff, MSG_BYTES_SIZE);
+    if (valread < MSG_BYTES_SIZE) {
+        fprintf(stderr, "Message size is not %d bytes or socket was closed\n", valread);
+        goto err_general;
+    }
+
+    sscanf(num_buff, "%lu", &buffer_size);
+
+    if (buffer_size == 0) {
+        fprintf(stderr, "Buffer size is invalid: %lu\n", buffer_size);
+        valread = -1;
+        goto err_general;
+    }
+
+    char *msg_buffer = malloc(buffer_size +1);
+    if (msg_buffer == NULL) goto err_not_enough_mem;
+    memset(msg_buffer, 0, buffer_size +1);
+
+    size_t sum = 0;
+    do {
+        valread = socket_recv(soc, msg_buffer + sum, buffer_size - sum);
+        assert(sum <= buffer_size);
+        if (valread == 0 && sum < buffer_size) {
+            fprintf(stderr, "Communication ended unexpectedly, expected msg of size %lu bytes and got %lu\n", buffer_size, sum);
+            goto err_general;
+        }
+        if (valread  < 0) {
+            fprintf(stderr, "Communication closed unexpectedly\n");
+            goto err_general;
+        }
+        sum += valread;
+    } while(sum < buffer_size);
+
+    *buffer = msg_buffer;
+    *buff_size = buffer_size;
+    return 0;
+
+    err_not_enough_mem:
+    fprintf(stderr, "Not enough memory to allocate buffer of size: %lu\n", buffer_size);
+
+    err_general:
+    perror("socket get message");
+    if (msg_buffer != NULL) {
+        free(msg_buffer);
+    }
+    *buffer = NULL;
+    return valread;
 }
 
 int socket_send(socket_t *soc, const void *buffer, size_t buffer_len){
@@ -139,7 +194,43 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len){
 }
 
 int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
-    // TODO
+    assert(soc != NULL);
+    assert(buffer != NULL);
+    assert(buffer_len > 0);
+    assert(buffer_len < pow(10, MSG_BYTES_SIZE)); /* must be less than 10^(size of message bytes in string) */
+
+    size_t blen = buffer_len + MSG_BYTES_SIZE;
+    char *fbuff = malloc(blen +1);
+    if (fbuff == NULL) goto err_not_enough_mem;
+    memset(fbuff, 0, blen +1);
+
+    sprintf(fbuff, "%" MSG_BYTES_SIZE_CSTR "lu", buffer_len);
+    memcpy(fbuff + MSG_BYTES_SIZE, buffer, buffer_len);
+
+    int valsent;
+    size_t sum = 0;
+    do {
+        valsent = socket_send(soc, fbuff + sum, blen - sum);
+        if (valsent == 0 && sum < blen) {
+            fprintf(stderr, "Message could not be sent successfully");
+            goto err_general;
+        }
+        if (valsent < 0) {
+            fprintf(stderr, "Communication closed unexpectedly\n");
+            goto err_general;
+        }
+        sum += valsent;
+    } while(sum < blen);
+
+    err_not_enough_mem:
+    fprintf(stderr, "Not enough memory to allocate buffer of size: %lu\n", blen +1);
+
+    err_general:
+    perror("socket send message");
+    if (fbuff != NULL) {
+        free(fbuff);
+    }
+    return -1;
 }
 
 void socket_close(socket_t *soc) {
