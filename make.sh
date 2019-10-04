@@ -1,1 +1,2 @@
-gcc POET++.c -lm
+cmake .
+make
