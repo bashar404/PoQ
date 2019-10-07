@@ -137,7 +137,7 @@ void* process_new_node(void *arg) {
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
 
-    return NULL;
+    pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[]) {
@@ -169,10 +169,13 @@ int main(int argc, char *argv[]) {
         struct thread_tuple * curr_thread = malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
+
         int error = pthread_create(next_thread, NULL, &process_new_node, curr_thread);
         if (error != FALSE) {
             fprintf(stderr, "A thread could not be created: %p\n", next_thread);
         }
+        /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
+        pthread_detach(*next_thread);
     }
 
     global_variables_destruction();
