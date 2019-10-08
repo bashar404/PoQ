@@ -7,8 +7,12 @@
 #include <assert.h>
 #include <pthread.h>
 #include <errno.h>
+
 #ifndef _WIN32
+
 #include <unistd.h>
+#include <json-parser/json.h>
+
 #else
 #include <Windows.h>
 #endif
@@ -16,6 +20,7 @@
 #include "socket_t.h"
 #include "queue_t.h"
 #include "poet_node_t.h"
+#include "general_structs.h"
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -53,6 +58,7 @@ pthread_mutex_t sgx_table_lock;
 socket_t *server_socket = NULL;
 
 int current_time;
+
 /********** GLOBAL VARIABLES **********/
 
 void global_variables_initialization() {
@@ -75,9 +81,10 @@ void global_variables_initialization() {
         goto error;
     }
 
-    current_time = 0;
-    for(int i = 0; i < MAX_THREADS; i++) {
-        queue_push(threads_queue, threads+i);
+    current_time = time(NULL); // take current time
+
+    for (int i = 0; i < MAX_THREADS; i++) {
+        queue_push(threads_queue, threads + i);
     }
 
     return;
@@ -99,40 +106,40 @@ int received_termination_signal() { // dummy function
     return FALSE;
 }
 
-void* process_new_node(void *arg) {
-    struct thread_tuple* curr_thread = (struct thread_tuple*) arg;
+void *process_new_node(void *arg) {
+    struct thread_tuple *curr_thread = (struct thread_tuple *) arg;
     socket_t *node_socket = (socket_t *) curr_thread->data;
     ERR("Processing node in thread: %p and socket %3d\n", curr_thread->thread, node_socket->socket_descriptor);
 
-    // TODO
+    char *buffer = NULL;
+    size_t buffer_size = 0;
 
-    char *method_str = "method:";
-    void *buffer = malloc(BUFFER_SZ+1);
+    int socket_state;
+    socket_state = socket_get_message(node_socket, (void *) &buffer, &buffer_size);
 
-    int socket_state = 0;
-    do {
-        memset(buffer, 0, sizeof(buffer));
-        socket_state = socket_recv(node_socket, buffer, BUFFER_SZ);
-        if (socket_state <= 0) goto error;
+    if (socket_state > 0) {
+        printf("message received from socket %d on thread %p\n: \"%s\"\n",
+               node_socket->socket_descriptor,
+               curr_thread->thread,
+               buffer);
 
-        if (socket_state > strlen(method_str)) {
-            char method[BUFFER_SZ];
-            sscanf(buffer, "method:%s\r\n", method);
-
+        json_value *json = json_parse(buffer, buffer_size);
+        printf("%d, %d, %d\n", json->type, json->u.object.length);
+        for(int i = 0; i < json->u.object.length; i++) {
+            printf("%s: %lu %d\n", json->u.object.values[i].name, json->u.object.values[i].name_length, json->u.object.values[i].value->type);
         }
-
-        socket_state = socket_send(node_socket, buffer, strlen(buffer));
-    } while(socket_state > 0);
-
-    goto terminate;
+    } else if (socket_state < 0) {
+        fprintf(stderr, "error receiving message from socket %d on thread %p\n",
+                node_socket->socket_descriptor,
+                curr_thread->thread);
+    } else {
+        printf("Connection was closed in socket %d on thread %p\n",
+               node_socket->socket_descriptor,
+               curr_thread->thread);
+    }
 
     error:
-    fprintf(stderr, "An error occurred with socket or was closed unexpectedly %d\nclosing connection with socket %d\n",
-            node_socket->socket_descriptor, node_socket->socket_descriptor);
-
-    terminate:
-    free(buffer);
-
+    if (buffer != NULL) free(buffer);
     socket_destructor(node_socket);
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
@@ -152,27 +159,30 @@ int main(int argc, char *argv[]) {
     }
     printf("Starting to listen\n");
 
-    while(received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
+    while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_accept(server_socket);
         if (new_socket == NULL) {
             fprintf(stderr, "Error accepting socket connection\n");
             continue;
         }
 
-        int checking = 1;
-        while(checking) { // FIXME: remove active waiting of threads
+        // FIXME: Figure out a way to eliminate active waiting in here
+        int checking;
+        do {
             checking = queue_is_empty(threads_queue);
-        }
+        } while (checking);
 
         pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
-        struct thread_tuple * curr_thread = malloc(sizeof(struct thread_tuple));
+        struct thread_tuple *curr_thread = malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
 
         int error = pthread_create(next_thread, NULL, &process_new_node, curr_thread);
         if (error != FALSE) {
-            fprintf(stderr, "A thread could not be created: %p\n", next_thread);
+            fprintf(stderr, "A thread could not be created: %p (error code: %d)\n", next_thread, error);
+            perror("thread creation");
+            exit(EXIT_FAILURE);
         }
         /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
         pthread_detach(*next_thread);

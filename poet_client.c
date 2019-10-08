@@ -7,6 +7,7 @@
 #include <assert.h>
 
 #include "socket_t.h"
+#include "general_structs.h"
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -20,9 +21,9 @@
 #define PROTOCOL 0
 #define PORT 9000
 #define SERVER_IP "127.0.0.1"
-#define BUFFER_SZ 1024
+#define BUFFER_SZ 100000
 
-socket_t * node_socket = NULL;
+socket_t *node_socket = NULL;
 
 void global_variable_initialization() {
     node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
@@ -41,17 +42,17 @@ int main(int argc, char *argv[]) {
     socket_connect(node_socket);
     ERR("Connection established\n");
 
-    char buffer[BUFFER_SZ];
-    srand(time(NULL));
-    int l = rand() % 10000;
-    for(int i = 0; i < l; i++) {
-        sprintf(buffer, "iteration %d", i);
-        socket_send(node_socket, buffer, strlen(buffer));
+    char *buffer = malloc(2048);
+    size_t len;
 
-        socket_recv(node_socket, buffer, BUFFER_SZ);
-        buffer[BUFFER_SZ - 1] = '\0';
-        printf("Response: %s\n", buffer);
-    }
+    public_key_t pk;
+    signature_t sign;
+    sprintf(buffer, "{\"method\":\"register\", \"data\":{\"public_key\":\"%s\", \"signature\":\"%s\"}}",
+            encode_hex(&pk, sizeof(pk)),
+            encode_hex(&sign, sizeof(sign)));
+    len = strlen(buffer);
+
+    socket_send_message(node_socket, buffer, len);
 
     global_variable_destructors();
 

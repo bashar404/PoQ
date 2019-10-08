@@ -5,28 +5,76 @@
 
 #include "general_structs.h"
 
-public_key_t *public_key_constructor(){
-    public_key_t * k = malloc(sizeof(public_key_t));
-    memset(k, 0, sizeof(public_key_t));
+#ifndef max
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
 
-    return k;
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+
+#endif
+
+char *encode_hex(void *buffer, size_t buffer_len) {
+    size_t wbuffer_len = buffer_len * 2 + 10;
+    char *wbuffer = malloc(wbuffer_len);
+    if (wbuffer == NULL) {
+        perror("malloc");
+        goto error;
+    }
+    memset(wbuffer, 0, wbuffer_len);
+
+    for (size_t i = 0; i < buffer_len; i++) {
+        assert(2 * i < wbuffer_len);
+        sprintf(wbuffer + 2 * i, "%02x", *((unsigned char *) buffer + i));
+    }
+
+    goto terminate;
+
+    error:
+    fprintf(stderr, "Fatal error, can not proceed with sending message");
+    if (wbuffer != NULL) {
+        free(wbuffer);
+    }
+    wbuffer = NULL;
+
+    terminate:
+    return wbuffer;
 }
 
-void public_key_destructor(public_key_t * p){
-    assert(p != NULL);
 
-    free(p);
-}
+void *decode_hex(char *buffer, size_t buffer_len) {
+    assert(buffer != NULL);
+    assert(buffer_len > 0);
 
-signature_t *signature_constructor(){
-    signature_t * s = malloc(sizeof(signature_t));
-    memset(s, 0, sizeof(signature_t));
+    size_t wbuff_len = buffer_len / 2 +1;
+    char *wbuffer = malloc(wbuff_len);
+    if (wbuffer == NULL) {
+        perror("malloc");
+        goto error;
+    }
+    memset(wbuffer, 0, wbuff_len);
 
-    return s;
-}
+    unsigned char c;
+    size_t pos = 0;
+    for(size_t i = 0; i < buffer_len; i+=2) {
+        assert(pos < wbuff_len);
+        c = max(buffer[i] - '0', 0);
+        c <<= 4;
+        c |= max(buffer[i+1] - '0', 0);
+        wbuffer[pos++] = c;
+    }
 
-void signature_destructor(signature_t * p){
-    assert(p != NULL);
+    error:
+    fprintf(stderr, "Fatal error, can not proceed with sending message");
+    if (wbuffer != NULL) {
+        free(wbuffer);
+    }
+    wbuffer = NULL;
 
-    free(p);
+    terminate:
+    return wbuffer;
 }

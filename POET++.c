@@ -10,9 +10,6 @@
 #include <time.h>
 #include <assert.h>
 
-//change this to NDEBUG if don't want to check assertions <assert(...)>
-#define DEBUG
-
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
 #define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
