@@ -124,10 +124,32 @@ void *process_new_node(void *arg) {
                buffer);
 
         json_value *json = json_parse(buffer, buffer_size);
-        printf("%d, %d, %d\n", json->type, json->u.object.length);
-        for(int i = 0; i < json->u.object.length; i++) {
-            printf("%s: %lu %d\n", json->u.object.values[i].name, json->u.object.values[i].name_length, json->u.object.values[i].value->type);
-        }
+//        printf("%d, %d, %d\n", json->type, json->u.object.length);
+//        for(int i = 0; i < json->u.object.length; i++) {
+//            printf("%s: %lu %d\n", json->u.object.values[i].name, json->u.object.values[i].name_length, json->u.object.values[i].value->type);
+//        }
+
+        char *pk_hex = json->u.object.values[1].value->u.object.values[0].value->u.string.ptr;
+        size_t pk_hex_len = json->u.object.values[1].value->u.object.values[0].value->u.string.length;
+        printf("%s (%lu) : %lu\n", pk_hex, pk_hex_len, strlen(pk_hex));
+
+        void *pk_buffer = decode_hex(pk_hex, pk_hex_len);
+
+        char *sign_hex = json->u.object.values[1].value->u.object.values[1].value->u.string.ptr;
+        size_t sign_hex_len = json->u.object.values[1].value->u.object.values[0].value->u.string.length;
+
+        printf("%s (%lu) : %lu\n", sign_hex, sign_hex_len, strlen(sign_hex));
+
+        void *sign_buffer = decode_hex(sign_hex, sign_hex_len);
+
+        public_key_t pk;
+        memcpy(&pk, pk_buffer, sizeof(pk));
+
+        signature_t sign;
+        memcpy(&sign, sign_buffer, sizeof(sign));
+
+        printf("%c, %c\n", pk.c, sign.c);
+
     } else if (socket_state < 0) {
         fprintf(stderr, "error receiving message from socket %d on thread %p\n",
                 node_socket->socket_descriptor,

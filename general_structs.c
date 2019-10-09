@@ -18,6 +18,9 @@
 
 #endif
 
+#define UPPERCASE(x) ((x) & ((unsigned char)0xEF))
+#define LOWERCASE(x) ((x) | ((unsigned char)0x10))
+
 char *encode_hex(void *buffer, size_t buffer_len) {
     size_t wbuffer_len = buffer_len * 2 + 10;
     char *wbuffer = malloc(wbuffer_len);
@@ -45,6 +48,21 @@ char *encode_hex(void *buffer, size_t buffer_len) {
     return wbuffer;
 }
 
+unsigned char hexchr2bin(const char hex)
+{
+    unsigned char c = 0;
+
+    if (hex >= '0' && hex <= '9') {
+        c = hex - '0';
+    } else if (hex >= 'A' && hex <= 'F') {
+        c = hex - 'A' + 10;
+    } else if (hex >= 'a' && hex <= 'f') {
+        c = hex - 'a' + 10;
+    }
+
+    return c;
+}
+
 
 void *decode_hex(char *buffer, size_t buffer_len) {
     assert(buffer != NULL);
@@ -62,14 +80,16 @@ void *decode_hex(char *buffer, size_t buffer_len) {
     size_t pos = 0;
     for(size_t i = 0; i < buffer_len; i+=2) {
         assert(pos < wbuff_len);
-        c = max(buffer[i] - '0', 0);
+        c = hexchr2bin(buffer[i]);
         c <<= 4;
-        c |= max(buffer[i+1] - '0', 0);
+        c |= hexchr2bin(buffer[i+1]);
         wbuffer[pos++] = c;
     }
 
+    goto terminate;
+
     error:
-    fprintf(stderr, "Fatal error, can not proceed with sending message");
+    fprintf(stderr, "Fatal error, can not proceed with converting hex message to raw bytes");
     if (wbuffer != NULL) {
         free(wbuffer);
     }

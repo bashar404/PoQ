@@ -46,7 +46,9 @@ int main(int argc, char *argv[]) {
     size_t len;
 
     public_key_t pk;
+    pk.c = 'y';
     signature_t sign;
+    sign.c = 'n';
     sprintf(buffer, "{\"method\":\"register\", \"data\":{\"public_key\":\"%s\", \"signature\":\"%s\"}}",
             encode_hex(&pk, sizeof(pk)),
             encode_hex(&sign, sizeof(sign)));

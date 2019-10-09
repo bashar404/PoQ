@@ -15,12 +15,14 @@
 
 struct public_key {
     NUM_TYPE key[PUBLIC_KEY_SIZE];
+    char c;
 };
 
 typedef struct public_key public_key_t;
 
 struct signature {
     NUM_TYPE hash[SIGNATURE_SIZE];
+    char c;
 };
 
 typedef struct signature signature_t;
