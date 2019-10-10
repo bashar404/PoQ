@@ -3,6 +3,7 @@
 
 #include <json-parser/json.h>
 
-json_value *find_value(json_value *json);
+/* Should return NULL if not found */
+json_value *find_value(json_value *json, char *name);
 
 #endif //POET_CODE_POET_FUNCTIONS_H

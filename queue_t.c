@@ -162,7 +162,7 @@ void queue_destructor(queue_t *q, int deallocate) {
     }
 
     pthread_mutex_destroy(q->lock);
-//    free(q->lock);
+    free(q->lock);
 
     free(q);
 }

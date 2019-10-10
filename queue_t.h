@@ -7,10 +7,11 @@
 #include <assert.h>
 #include <pthread.h>
 
-#ifndef NDEBUG
+#ifdef DEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
 #define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
 #else
+#undef ERR
 #define ERR(...) /**/
 #endif
 

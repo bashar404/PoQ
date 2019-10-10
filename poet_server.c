@@ -23,6 +23,11 @@
 #include "poet_node_t.h"
 #include "general_structs.h"
 #include "poet_server_functions.h"
+#include "poet_functions.h"
+
+#ifdef ERR
+#undef ERR
+#endif
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -125,11 +130,13 @@ int check_message_integrity(json_value *json) {
 
     valid = valid && json->type == json_object;
     valid = valid && json->u.object.length >= 2;
-    valid = valid && strcmp(json->u.object.values[0].name, "method") == 0;
-    valid = valid && json->u.object.values[0].value->type == json_string;
+
+    json_value *json_method = (valid ? find_value(json, "method") : NULL);
+    valid = valid && json_method != NULL;
+    valid = valid && json_method->type == json_string;
 
     if (valid) {
-        char *s = json->u.object.values[0].value->u.string.ptr;
+        char *s = json_method->u.string.ptr;
         int found = 0;
         for (struct function_handle *i = functions; i->name != NULL && !found; i++) {
             found = found || strcmp(s, i->name) == 0;
@@ -138,7 +145,7 @@ int check_message_integrity(json_value *json) {
         valid = valid && found;
     }
 
-    valid = valid && strcmp(json->u.object.values[1].name, "data") == 0;
+    valid = valid && find_value(json, "data") != NULL;
 
     return valid;
 }
@@ -155,7 +162,7 @@ int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     }
 
     fprintf(stderr, "JSON message is valid\n");
-    char *func_name = json->u.object.values[0].value->u.string.ptr;
+    char *func_name = find_value(json, "method")->u.string.ptr;
     struct function_handle *function = NULL;
     for (struct function_handle *i = functions; i->name != NULL && function == NULL; i++) {
         function = strcmp(func_name, i->name) == 0 ? i : NULL;
