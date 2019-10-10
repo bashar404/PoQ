@@ -46,15 +46,19 @@ int main(int argc, char *argv[]) {
     size_t len;
 
     public_key_t pk;
-    pk.c = 'y';
     signature_t sign;
-    sign.c = 'n';
     sprintf(buffer, "{\"method\":\"register\", \"data\":{\"public_key\":\"%s\", \"signature\":\"%s\"}}",
             encode_hex(&pk, sizeof(pk)),
             encode_hex(&sign, sizeof(sign)));
     len = strlen(buffer);
 
     socket_send_message(node_socket, buffer, len);
+
+    free(buffer);
+    buffer = NULL;
+
+    socket_get_message(node_socket, (void *) &buffer, &len);
+    printf("Recibido del servidor: %s (%lu)\n", buffer, len);
 
     global_variable_destructors();
 

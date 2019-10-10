@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <errno.h>
+#include <signal.h>
 
 #ifndef _WIN32
 
@@ -21,6 +22,7 @@
 #include "queue_t.h"
 #include "poet_node_t.h"
 #include "general_structs.h"
+#include "poet_server_functions.h"
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -57,7 +59,9 @@ pthread_mutex_t sgx_table_lock;
 
 socket_t *server_socket = NULL;
 
-int current_time;
+time_t current_time = 0;
+
+int should_terminate = 0;
 
 /********** GLOBAL VARIABLES **********/
 
@@ -102,8 +106,74 @@ void global_variables_destruction() {
     pthread_mutex_destroy(&sgx_table_lock);
 }
 
+// Define the function to be called when ctrl-c (SIGINT) signal is sent to process
+void signal_callback_handler(int signum) {
+    should_terminate = 1;
+    global_variables_destruction();
+    fprintf(stderr, "Caught signal %d\n",signum);
+    exit(SIGINT);
+}
+
 int received_termination_signal() { // dummy function
-    return FALSE;
+    return should_terminate;
+}
+
+/* Check whether the message has the intended JSON structure for communication */
+int check_message_integrity(json_value *json) {
+    assert(json != NULL);
+    int valid = 1;
+
+    valid = valid && json->type == json_object;
+    valid = valid && json->u.object.length >= 2;
+    valid = valid && strcmp(json->u.object.values[0].name, "method") == 0;
+    valid = valid && json->u.object.values[0].value->type == json_string;
+
+    if (valid) {
+        char *s = json->u.object.values[0].value->u.string.ptr;
+        int found = 0;
+        for (struct function_handle *i = functions; i->name != NULL && !found; i++) {
+            found = found || strcmp(s, i->name) == 0;
+        }
+
+        valid = valid && found;
+    }
+
+    valid = valid && strcmp(json->u.object.values[1].name, "data") == 0;
+
+    return valid;
+}
+
+int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
+    /* FIXME: this assumes that the JSON is well formed, the opposite can happen */
+    json_value *json = json_parse(buffer, buffer_len);
+
+    int ret = EXIT_SUCCESS;
+
+    if (!check_message_integrity(json)) {
+        fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
+        goto error;
+    }
+
+    fprintf(stderr, "JSON message is valid\n");
+    char *func_name = json->u.object.values[0].value->u.string.ptr;
+    struct function_handle *function = NULL;
+    for (struct function_handle *i = functions; i->name != NULL && function == NULL; i++) {
+        function = strcmp(func_name, i->name) == 0 ? i : NULL;
+    }
+    assert(function != NULL);
+
+    printf("Calling: %s\n", function->name);
+
+    ret = function->function(json->u.object.values[1].value, soc);
+    goto terminate;
+
+    error:
+    fprintf(stderr, "method delegation finished with failure\n");
+    ret = EXIT_FAILURE;
+
+    terminate:
+    json_value_free(json);
+    return ret;
 }
 
 void *process_new_node(void *arg) {
@@ -117,40 +187,23 @@ void *process_new_node(void *arg) {
     int socket_state;
     socket_state = socket_get_message(node_socket, (void *) &buffer, &buffer_size);
 
-    if (socket_state > 0) {
+    while (socket_state > 0) {
         printf("message received from socket %d on thread %p\n: \"%s\"\n",
                node_socket->socket_descriptor,
                curr_thread->thread,
                buffer);
 
-        json_value *json = json_parse(buffer, buffer_size);
-//        printf("%d, %d, %d\n", json->type, json->u.object.length);
-//        for(int i = 0; i < json->u.object.length; i++) {
-//            printf("%s: %lu %d\n", json->u.object.values[i].name, json->u.object.values[i].name_length, json->u.object.values[i].value->type);
-//        }
+        if (delegate_message(buffer, buffer_size, node_socket) != 0) {
+            goto error;
+        }
 
-        char *pk_hex = json->u.object.values[1].value->u.object.values[0].value->u.string.ptr;
-        size_t pk_hex_len = json->u.object.values[1].value->u.object.values[0].value->u.string.length;
-        printf("%s (%lu) : %lu\n", pk_hex, pk_hex_len, strlen(pk_hex));
+        free(buffer);
+        buffer = NULL;
 
-        void *pk_buffer = decode_hex(pk_hex, pk_hex_len);
+        socket_state = socket_get_message(node_socket, (void *) &buffer, &buffer_size);
+    }
 
-        char *sign_hex = json->u.object.values[1].value->u.object.values[1].value->u.string.ptr;
-        size_t sign_hex_len = json->u.object.values[1].value->u.object.values[0].value->u.string.length;
-
-        printf("%s (%lu) : %lu\n", sign_hex, sign_hex_len, strlen(sign_hex));
-
-        void *sign_buffer = decode_hex(sign_hex, sign_hex_len);
-
-        public_key_t pk;
-        memcpy(&pk, pk_buffer, sizeof(pk));
-
-        signature_t sign;
-        memcpy(&sign, sign_buffer, sizeof(sign));
-
-        printf("%c, %c\n", pk.c, sign.c);
-
-    } else if (socket_state < 0) {
+    if (socket_state < 0) {
         fprintf(stderr, "error receiving message from socket %d on thread %p\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread);
@@ -161,7 +214,9 @@ void *process_new_node(void *arg) {
     }
 
     error:
-    if (buffer != NULL) free(buffer);
+    if (buffer != NULL) {
+        free(buffer);
+    }
     socket_destructor(node_socket);
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
@@ -171,6 +226,8 @@ void *process_new_node(void *arg) {
 
 int main(int argc, char *argv[]) {
     // TODO: receive command line arguments for variable initialization
+
+    signal(SIGINT, signal_callback_handler);
 
     global_variables_initialization();
 

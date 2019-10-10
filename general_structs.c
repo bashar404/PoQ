@@ -48,8 +48,7 @@ char *encode_hex(void *buffer, size_t buffer_len) {
     return wbuffer;
 }
 
-unsigned char hexchr2bin(const char hex)
-{
+unsigned char hexchr2bin(const char hex) {
     unsigned char c = 0;
 
     if (hex >= '0' && hex <= '9') {
@@ -62,7 +61,6 @@ unsigned char hexchr2bin(const char hex)
 
     return c;
 }
-
 
 void *decode_hex(char *buffer, size_t buffer_len) {
     assert(buffer != NULL);

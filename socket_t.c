@@ -277,11 +277,14 @@ void socket_close(socket_t *soc) {
     ERR("closing socket: %d\n", soc->socket_descriptor);
 
     close(soc->socket_descriptor);
+    soc->is_closed = 1;
 }
 
 void socket_destructor(socket_t *soc) {
     assert(soc != NULL);
 
-    socket_close(soc);
+    if (! soc->is_closed) {
+        socket_close(soc);
+    }
     free(soc);
 }

@@ -19,6 +19,7 @@ struct socket_t {
     int type;
     int protocol;
     int opt;
+    int is_closed;
 };
 
 typedef struct socket_t socket_t;

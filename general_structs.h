@@ -15,23 +15,31 @@
 
 struct public_key {
     NUM_TYPE key[PUBLIC_KEY_SIZE];
-    char c;
 };
 
 typedef struct public_key public_key_t;
 
 struct signature {
     NUM_TYPE hash[SIGNATURE_SIZE];
-    char c;
 };
 
 typedef struct signature signature_t;
 
-public_key_t *public_key_constructor();
-void public_key_destructor(public_key_t * p);
+typedef enum {
+    poet_none,
+    poet_public_key,
+    poet_signature
+} poet_type;
 
-signature_t *signature_constructor();
-void signature_destructor(signature_t * p);
+union poet_generic_object {
+    public_key_t pk;
+    signature_t signature;
+};
+
+typedef struct poet_object {
+    poet_type type;
+    union poet_generic_object value;
+} poet_object_t;
 
 
 char *encode_hex(void *d, size_t len);

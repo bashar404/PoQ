@@ -14,10 +14,10 @@ target_link_libraries(poet_main m pthread)
 
 add_executable(poet_client
         poet_client.c socket_t.c queue_t.c
-        enclave.h poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c)
+        enclave.h poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c poet_functions.h)
 target_link_libraries(poet_client m pthread)
 
 add_executable(poet_server
         poet_server.c socket_t.c queue_t.c
-        poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c)
+        poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c poet_server_functions.h poet_server_functions.c poet_functions.h)
 target_link_libraries(poet_server m pthread)
