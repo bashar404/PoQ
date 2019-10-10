@@ -1,13 +1,13 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <ctype.h>
-#include <string.h>
-#include <time.h>
-#include <assert.h>
-#include <pthread.h>
-#include <errno.h>
-#include <signal.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <cctype>
+#include <cstring>
+#include <ctime>
+#include <cassert>
+#include <thread>
+#include <cerrno>
+#include <csignal>
 
 #ifndef _WIN32
 
@@ -114,7 +114,7 @@ void global_variables_destruction() {
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
 void signal_callback_handler(int signum) {
     should_terminate = 1;
-    global_variables_destruction();
+//    global_variables_destruction();
     fprintf(stderr, "Caught signal %d\n",signum);
     exit(SIGINT);
 }
@@ -155,6 +155,8 @@ int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     json_value *json = json_parse(buffer, buffer_len);
 
     int ret = EXIT_SUCCESS;
+    struct function_handle *function = NULL;
+    char *func_name = NULL;
 
     if (!check_message_integrity(json)) {
         fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
@@ -162,8 +164,8 @@ int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     }
 
     fprintf(stderr, "JSON message is valid\n");
-    char *func_name = find_value(json, "method")->u.string.ptr;
-    struct function_handle *function = NULL;
+    func_name = find_value(json, "method")->u.string.ptr;
+
     for (struct function_handle *i = functions; i->name != NULL && function == NULL; i++) {
         function = strcmp(func_name, i->name) == 0 ? i : NULL;
     }
@@ -192,7 +194,7 @@ void *process_new_node(void *arg) {
     size_t buffer_size = 0;
 
     int socket_state;
-    socket_state = socket_get_message(node_socket, (void *) &buffer, &buffer_size);
+    socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
 
     while (socket_state > 0) {
         printf("message received from socket %d on thread %p\n: \"%s\"\n",
@@ -207,7 +209,7 @@ void *process_new_node(void *arg) {
         free(buffer);
         buffer = NULL;
 
-        socket_state = socket_get_message(node_socket, (void *) &buffer, &buffer_size);
+        socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
     }
 
     if (socket_state < 0) {
@@ -260,7 +262,7 @@ int main(int argc, char *argv[]) {
 
         pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
-        struct thread_tuple *curr_thread = malloc(sizeof(struct thread_tuple));
+        struct thread_tuple *curr_thread = (struct thread_tuple *) malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
 

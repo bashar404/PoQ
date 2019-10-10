@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <ctype.h>
-#include <string.h>
-#include <time.h>
-#include <assert.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <cctype>
+#include <cstring>
+#include <ctime>
+#include <cassert>
 
 #include "socket_t.h"
 #include "general_structs.h"
@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
     socket_connect(node_socket);
     ERR("Connection established\n");
 
-    char *buffer = malloc(2048);
+    char *buffer = (char *) malloc(2048);
     size_t len;
 
     public_key_t pk;
@@ -55,9 +55,9 @@ int main(int argc, char *argv[]) {
     socket_send_message(node_socket, buffer, len);
 
     free(buffer);
-    buffer = NULL;
+    buffer = nullptr;
 
-    socket_get_message(node_socket, (void *) &buffer, &len);
+    socket_get_message(node_socket, (void **) &buffer, &len);
     printf("Recibido del servidor: %s (%lu)\n", buffer, len);
 
     global_variable_destructors();

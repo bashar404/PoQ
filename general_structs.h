@@ -1,6 +1,10 @@
 #ifndef POET_CODE_GENERAL_STRUCTS_H
 #define POET_CODE_GENERAL_STRUCTS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdint.h>
 #include <openssl/ssl.h>
@@ -43,6 +47,11 @@ typedef struct poet_object {
 
 
 char *encode_hex(void *d, size_t len);
+
 void *decode_hex(char *hex, size_t len);
+
+#ifdef __cplusplus
+};
+#endif
 
 #endif //POET_CODE_GENERAL_STRUCTS_H

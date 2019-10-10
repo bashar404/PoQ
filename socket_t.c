@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
@@ -43,7 +47,7 @@
 
 // TODO: set C preprocessor conditionals for SSL
 
-socket_t *socket_constructor(int domain, int type, int protocol, char *ip, int port) {
+socket_t *socket_constructor(int domain, int type, int protocol, const char *ip, int port) {
     socket_t *s = (socket_t *) malloc(sizeof(socket_t));
     if (s == NULL) goto error;
 
@@ -109,7 +113,7 @@ socket_t *socket_accept(socket_t *soc) {
 
     int new_socket_fd;
     if ((new_socket_fd = accept(soc->socket_descriptor, (struct sockaddr *) &(soc->address),
-                                (socklen_t *) &(soc->addrlen))) < 0)
+                                (socklen_t * ) & (soc->addrlen))) < 0)
         goto error;
 
     socket_t *new_socket = malloc(sizeof(socket_t));
@@ -283,8 +287,12 @@ void socket_close(socket_t *soc) {
 void socket_destructor(socket_t *soc) {
     assert(soc != NULL);
 
-    if (! soc->is_closed) {
+    if (!soc->is_closed) {
         socket_close(soc);
     }
     free(soc);
 }
+
+#ifdef __cplusplus
+}
+#endif

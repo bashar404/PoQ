@@ -1,11 +1,17 @@
 #include <json-parser/json.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <json-parser/json.h>
 #include <assert.h>
 #include <string.h>
 
 #include "queue_t.h"
 
 // BFS
-json_value *find_value(json_value *u, char *name) {
+json_value *find_value(json_value *u, const char *name) {
     assert(u != NULL);
     assert(name != NULL);
 
@@ -13,13 +19,13 @@ json_value *find_value(json_value *u, char *name) {
     queue_t *queue = queue_constructor();
     queue_push(queue, u);
 
-    while(! queue_is_empty(queue) && r == NULL) {
+    while (!queue_is_empty(queue) && r == NULL) {
         u = queue_front(queue);
         queue_pop(queue);
 
-        switch(u->type) {
+        switch (u->type) {
             case json_object:
-                for(int i = 0; i < u->u.object.length && r == NULL; i++) {
+                for (int i = 0; i < u->u.object.length && r == NULL; i++) {
                     json_object_entry *entry = &(u->u.object.values[i]);
                     queue_push(queue, entry->value);
 
@@ -29,7 +35,7 @@ json_value *find_value(json_value *u, char *name) {
                 }
                 break;
             case json_array:
-                for(int i = 0; i < u->u.array.length; i++) {
+                for (int i = 0; i < u->u.array.length; i++) {
                     queue_push(queue, u->u.array.values[i]);
                 }
                 break;
@@ -47,3 +53,7 @@ json_value *find_value(json_value *u, char *name) {
 
     return r;
 }
+
+#ifdef __cplusplus
+}
+#endif

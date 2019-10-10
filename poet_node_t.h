@@ -1,7 +1,3 @@
-//
-// Created by skinman95 on 24/09/19.
-//
-
 #ifndef POET_CODE_POET_NODE_T_H
 #define POET_CODE_POET_NODE_T_H
 

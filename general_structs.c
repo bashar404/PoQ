@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,12 +10,12 @@
 #include "general_structs.h"
 
 #ifndef max
-#define max(a,b) \
+#define max(a, b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a > _b ? _a : _b; })
 
-#define min(a,b) \
+#define min(a, b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })
@@ -66,7 +70,7 @@ void *decode_hex(char *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
-    size_t wbuff_len = buffer_len / 2 +1;
+    size_t wbuff_len = buffer_len / 2 + 1;
     char *wbuffer = malloc(wbuff_len);
     if (wbuffer == NULL) {
         perror("malloc");
@@ -76,11 +80,11 @@ void *decode_hex(char *buffer, size_t buffer_len) {
 
     unsigned char c;
     size_t pos = 0;
-    for(size_t i = 0; i < buffer_len; i+=2) {
+    for (size_t i = 0; i < buffer_len; i += 2) {
         assert(pos < wbuff_len);
         c = hexchr2bin(buffer[i]);
         c <<= 4;
-        c |= hexchr2bin(buffer[i+1]);
+        c |= hexchr2bin(buffer[i + 1]);
         wbuffer[pos++] = c;
     }
 
@@ -96,3 +100,7 @@ void *decode_hex(char *buffer, size_t buffer_len) {
     terminate:
     return wbuffer;
 }
+
+#ifdef __cplusplus
+};
+#endif

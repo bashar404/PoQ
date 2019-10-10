@@ -1,6 +1,10 @@
 #ifndef QUEUE_H
 #define QUEUE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,14 +34,18 @@ struct queue {
 typedef struct item item_t;
 typedef struct queue queue_t;
 
-queue_t* queue_constructor();
+queue_t *queue_constructor();
 int queue_is_empty(queue_t *q);
-void* queue_front(queue_t *q);
-void* queue_back(queue_t *q);
+void *queue_front(queue_t *q);
+void *queue_back(queue_t *q);
 void queue_pop(queue_t *q);
-void queue_push(queue_t *q, void* d);
+void queue_push(queue_t *q, void *d);
 void queue_print(queue_t *q);
 size_t queue_size(queue_t *q);
 void queue_destructor(queue_t *q, int deallocate);
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif

@@ -1,6 +1,13 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdlib.h>
+#include <pthread.h>
+#include <string.h>
 #include "queue_t.h"
 
-queue_t* queue_constructor() {
+queue_t *queue_constructor() {
     queue_t *q = (queue_t *) malloc(sizeof(queue_t));
     if (q == NULL) goto error;
 
@@ -27,19 +34,20 @@ int queue_is_empty(queue_t *q) {
     assert(q != NULL && q->lock != NULL);
     pthread_mutex_lock(q->lock);
     assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL as well
-    ERR("queue is empty: %s (size: %d)\n", (q != NULL && q->head == NULL ? "true" : "false"), (q != NULL ? (int) q->size : 0));
+    ERR("queue is empty: %s (size: %d)\n", (q != NULL && q->head == NULL ? "true" : "false"),
+        (q != NULL ? (int) q->size : 0));
     int r = q != NULL && q->head == NULL;
     pthread_mutex_unlock(q->lock);
     return r;
 }
 
-void* queue_front(queue_t *q) {
+void *queue_front(queue_t *q) {
     assert(q != NULL && q->lock != NULL);
 
     pthread_mutex_lock(q->lock);
 
     if (q->head != NULL) {
-        void* d = q->head->d;
+        void *d = q->head->d;
         pthread_mutex_unlock(q->lock);
         return d;
     } else {
@@ -52,7 +60,7 @@ void* queue_front(queue_t *q) {
     return NULL;
 }
 
-void* queue_back(queue_t *q) {
+void *queue_back(queue_t *q) {
     assert(q != NULL && q->lock != NULL);
 
     pthread_mutex_lock(q->lock);
@@ -104,7 +112,7 @@ void queue_push(queue_t *q, void *d) {
 
     new_item->d = d;
 
-    if (q->tail == NULL){
+    if (q->tail == NULL) {
         assert(q->head == NULL);
         q->head = q->tail = new_item;
     } else {
@@ -134,7 +142,7 @@ void queue_print(queue_t *q) {
     }
 
     pthread_mutex_lock(q->lock);
-    for(item_t *i = q->head; i != NULL; i=i->next) {
+    for (item_t *i = q->head; i != NULL; i = i->next) {
         printf("[%u]", *((unsigned int *) i->d));
     }
     pthread_mutex_unlock(q->lock);
@@ -154,7 +162,7 @@ void queue_destructor(queue_t *q, int deallocate) {
 
     // XXX: maybe put a destruction state variable to say that is destroying the object?
 
-    while(!queue_is_empty(q)) {
+    while (!queue_is_empty(q)) {
         if (deallocate != 0) {
             free(queue_front(q));
         }
@@ -166,3 +174,7 @@ void queue_destructor(queue_t *q, int deallocate) {
 
     free(q);
 }
+
+#ifdef __cplusplus
+}
+#endif
