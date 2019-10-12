@@ -252,6 +252,10 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    if (ecall_test_print(global_eid, "I works!!!!!") != SGX_SUCCESS) {
+        fprintf(stderr, "Something happened :c\n");
+    }
+
     sgx_destroy_enclave(global_eid);
 
     global_variable_destructors();
