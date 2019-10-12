@@ -1,0 +1,13 @@
+enclave {
+
+    include "stdio.h"
+    include "string.h"
+
+    trusted {
+        public void ecall_test_print([in, string] const char *msg);
+    };
+
+    untrusted {
+        void ocall_print_msg([in, string] const char *msg);
+    };
+};

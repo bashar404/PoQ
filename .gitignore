@@ -623,6 +623,10 @@ _deps
 *-prefix/
 
 # End of https://www.gitignore.io/api/cmake
-poet_client
+client
 poet_main
 poet_server
+
+*_t.*
+*_u.*
+*.cbp
