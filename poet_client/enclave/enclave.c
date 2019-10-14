@@ -7,6 +7,7 @@ extern "C" {
 
 //#include "enclave.h"
 #include "enclave_t.h"  /* print_string */
+#include "sgx_trts.h"
 
 void ecall_test_print(const char *msg) {
     size_t len = strlen(msg);
@@ -26,6 +27,10 @@ void ecall_test_print(const char *msg) {
 
     ocall_print_msg(buffer2);
     ocall_print_msg(msg);
+}
+
+void ecall_random(int *a) {
+    sgx_read_rand((unsigned char *) a,4);
 }
 
 #ifdef __cplusplus

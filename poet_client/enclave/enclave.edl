@@ -2,9 +2,11 @@ enclave {
 
     include "stdio.h"
     include "string.h"
+    from "sgx_tstdc.edl" import *;
 
     trusted {
         public void ecall_test_print([in, string] const char *msg);
+        public void ecall_random([out] int *a);
     };
 
     untrusted {

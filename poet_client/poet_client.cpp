@@ -252,9 +252,18 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    if (ecall_test_print(global_eid, "I works!!!!!") != SGX_SUCCESS) {
+    if (ecall_test_print(global_eid, "It works!!!!!") != SGX_SUCCESS) {
         fprintf(stderr, "Something happened :c\n");
     }
+
+    int a = 0;
+    printf("Number: %d\n", a);
+
+    if (ecall_random(global_eid, &a) != SGX_SUCCESS) {
+        fprintf(stderr, "Something happened :c\n");
+    }
+
+    printf("Number: %d\n", a);
 
     sgx_destroy_enclave(global_eid);
 
