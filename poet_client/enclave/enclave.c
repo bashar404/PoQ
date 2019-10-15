@@ -5,7 +5,6 @@ extern "C" {
 #include <stdio.h>
 #include <string.h>
 
-//#include "enclave.h"
 #include "enclave_t.h"  /* print_string */
 #include "sgx_trts.h"
 

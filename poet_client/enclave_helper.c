@@ -1,17 +1,26 @@
-#ifndef POET_CODE_POET_CLIENT_H
-#define POET_CODE_POET_CLIENT_H
-
+#include <stdio.h>
+#include <assert.h>
+#include <pwd.h>
+#include "../enclave_u.h"
+#include <unistd.h>
 #include "sgx_error.h"       /* sgx_status_t */
 #include "sgx_eid.h"     /* sgx_enclave_id_t */
 #include "sgx_urts.h"
 #include "sgx_uae_service.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MAX_PATH FILENAME_MAX
+
+#if   defined(__GNUC__)
+# define TOKEN_FILENAME   "enclave.token"
+# define ENCLAVE_FILENAME "enclave.signed.so"
+#endif
 
 #define FALSE 0
 #define TRUE 1
-
-extern sgx_enclave_id_t global_eid;
 
 typedef struct _sgx_errlist_t {
     sgx_status_t err;
@@ -104,14 +113,13 @@ static sgx_errlist_t sgx_errlist[] = {
 };
 
 /* Check error conditions for loading enclave */
-static void print_error_message(sgx_status_t ret)
-{
+static void print_error_message(sgx_status_t ret) {
     size_t idx = 0;
-    size_t ttl = sizeof sgx_errlist/sizeof sgx_errlist[0];
+    size_t ttl = sizeof sgx_errlist / sizeof sgx_errlist[0];
 
     for (idx = 0; idx < ttl; idx++) {
-        if(ret == sgx_errlist[idx].err) {
-            if(NULL != sgx_errlist[idx].sug)
+        if (ret == sgx_errlist[idx].err) {
+            if (NULL != sgx_errlist[idx].sug)
                 printf("Info: %s\n", sgx_errlist[idx].sug);
             printf("Error: %s\n", sgx_errlist[idx].msg);
             break;
@@ -127,8 +135,9 @@ static void print_error_message(sgx_status_t ret)
  *   Step 2: call sgx_create_enclave to initialize an enclave instance
  *   Step 3: save the launch token if it is updated
  */
-static int initialize_enclave(void)
-{
+int initialize_enclave(sgx_enclave_id_t *eid) {
+    assert(eid != NULL);
+
     char token_path[MAX_PATH] = {'\0'};
     sgx_launch_token_t token = {0};
     sgx_status_t ret = SGX_ERROR_UNEXPECTED;
@@ -141,11 +150,11 @@ static int initialize_enclave(void)
     const char *home_dir = getpwuid(getuid())->pw_dir;
 
     if (home_dir != NULL &&
-        (strlen(home_dir)+strlen("/")+sizeof(TOKEN_FILENAME)+1) <= MAX_PATH) {
+        (strlen(home_dir) + strlen("/") + sizeof(TOKEN_FILENAME) + 1) <= MAX_PATH) {
         /* compose the token path */
         strncpy(token_path, home_dir, strlen(home_dir));
         strncat(token_path, "/", strlen("/"));
-        strncat(token_path, TOKEN_FILENAME, sizeof(TOKEN_FILENAME)+1);
+        strncat(token_path, TOKEN_FILENAME, sizeof(TOKEN_FILENAME) + 1);
     } else {
         /* if token path is too long or $HOME is NULL */
         strncpy(token_path, TOKEN_FILENAME, sizeof(TOKEN_FILENAME));
@@ -167,7 +176,7 @@ static int initialize_enclave(void)
     }
     /* Step 2: call sgx_create_enclave to initialize an enclave instance */
     /* Debug Support: set 2nd parameter to 1 */
-    ret = sgx_create_enclave(ENCLAVE_FILENAME, SGX_DEBUG_FLAG, &token, &updated, &global_eid, NULL);
+    ret = sgx_create_enclave(ENCLAVE_FILENAME, SGX_DEBUG_FLAG, &token, &updated, eid, NULL);
     if (ret != SGX_SUCCESS) {
         print_error_message(ret);
         if (fp != NULL) fclose(fp);
@@ -191,4 +200,6 @@ static int initialize_enclave(void)
     return 0;
 }
 
-#endif //POET_CODE_POET_CLIENT_H
+#ifdef __cplusplus
+};
+#endif

@@ -3,7 +3,6 @@
 
 typedef unsigned int uint;
 
-
 struct node {
     uint node_id;
     uint arrival_time;

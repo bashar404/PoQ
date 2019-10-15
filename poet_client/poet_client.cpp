@@ -1,30 +1,17 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
-#include <cctype>
 #include <cstring>
-#include <ctime>
-#include <cassert>
-
 #include <unistd.h>
-#include <pwd.h>
 #include <json-parser/json.h>
 
-#if   defined(__GNUC__)
-# define TOKEN_FILENAME   "enclave.token"
-# define ENCLAVE_FILENAME "enclave.signed.so"
-#endif
-
 #include "socket_t.h"
-#include "general_structs.h"
 #include "poet_functions.h"
+#include "enclave_helper.h"
 
 #include "sgx_error.h"       /* sgx_status_t */
 #include "sgx_eid.h"     /* sgx_enclave_id_t */
 #include "sgx_urts.h"
-#include "sgx_uae_service.h"
-#include "../enclave_u.h"
-#include "poet_client.h"
+#include "enclave_u.h"
 
 #ifndef NDEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
@@ -42,8 +29,6 @@
 
 socket_t *node_socket = nullptr;
 
-sgx_enclave_id_t global_eid = 0;
-
 void global_variable_initialization() {
     node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
 }
@@ -57,15 +42,17 @@ int main(int argc, char *argv[]) {
 
     global_variable_initialization();
 
-    ERR("trying to establish connection with server\n");
-    socket_connect(node_socket);
-    ERR("Connection established\n");
+    sgx_enclave_id_t eid = 0;
 
     /* Initialize the enclave */
-    if(initialize_enclave() < 0){
+    if(initialize_enclave(&eid) < 0){
         fprintf(stderr, "Could not create Enclave\n");
         return EXIT_FAILURE;
     }
+
+    ERR("trying to establish connection with server\n");
+    socket_connect(node_socket);
+    ERR("Connection established\n");
 
     char *buffer = (char *) malloc(BUFFER_SZ);
     sprintf(buffer, R"({"method" : "register", "data": {}})");
@@ -86,7 +73,7 @@ int main(int argc, char *argv[]) {
     printf("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound, node_id);
 
     uint sgxt = 0;
-    if (ecall_random_bytes(global_eid, &sgxt, sizeof(sgxt)) != SGX_SUCCESS) {
+    if (ecall_random_bytes(eid, &sgxt, sizeof(sgxt)) != SGX_SUCCESS) {
         fprintf(stderr, "Something happened :c\n");
     }
     sgxt = sgx_lowerbound + sgxt % (sgxmax - sgx_lowerbound +1);
@@ -100,11 +87,19 @@ int main(int argc, char *argv[]) {
     printf("Sending SGXt (%u) to the server\n", sgxt);
     socket_send_message(node_socket, buffer, strlen(buffer));
 
+    printf("Enter character to exit (%lu).\n", eid);
+    getchar();
+
+//    printf("Ctrl+C to destroy enclave (%lu).\n", eid);
+//    sleep(2*60);
+
     socket_close(node_socket);
 
-    sgx_destroy_enclave(global_eid);
+    sgx_destroy_enclave(eid);
 
     global_variable_destructors();
+
+    printf("Ending node\n");
 
     return EXIT_SUCCESS;
 }

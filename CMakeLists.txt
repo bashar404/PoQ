@@ -23,7 +23,7 @@ set(E_SRCS poet_client/enclave/enclave.c)
 set(LDS poet_client/enclave/enclave.lds)
 add_enclave_library(enclave SRCS ${E_SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS} LDSCRIPT ${LDS})
 enclave_sign(enclave KEY poet_client/enclave/enclave_private.pem CONFIG poet_client/enclave/enclave.config.xml)
-set(SRCS poet_client/poet_client.cpp socket_t.c queue_t.c
+set(SRCS poet_client/poet_client.cpp poet_client/enclave_helper.c socket_t.c queue_t.c
           general_structs.c json-parser/json.c poet_functions.c)
 add_untrusted_executable(client SRCS ${SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS})
 add_dependencies(client enclave-sign)
