@@ -18,6 +18,18 @@
 #include <Windows.h>
 #endif
 
+#define MAX_THREADS 20
+#define MAX_NODES 10000
+#define TRUE 1
+#define FALSE 0
+
+#define DOMAIN AF_INET
+#define TYPE SOCK_STREAM
+#define PROTOCOL 0
+#define PORT 9000
+#define SERVER_IP "0.0.0.0"
+#define BUFFER_SZ 1024
+
 #include "socket_t.h"
 #include "queue_t.h"
 #include "poet_node_t.h"
@@ -36,46 +48,42 @@
 #define ERR(...) /**/
 #endif
 
-#define MAX_THREADS 20
-#define MAX_NODES 10000
-#define TRUE 1
-#define FALSE 0
-
-#define DOMAIN AF_INET
-#define TYPE SOCK_STREAM
-#define PROTOCOL 0
-#define PORT 9000
-#define SERVER_IP "0.0.0.0"
-#define BUFFER_SZ 1024
-
 struct thread_tuple {
     pthread_t *thread;
     void *data;
 };
 
 /********** GLOBAL VARIABLES **********/
-pthread_t threads[MAX_THREADS];
-queue_t *threads_queue = NULL;
+int should_terminate = 0;
 
-queue_t *queue = NULL;
+pthread_t threads[MAX_THREADS];
+queue_t *threads_queue = nullptr;
+
+/********** PoET variables **********/
+
+queue_t *queue = nullptr;
 
 node_t sgx_table[MAX_NODES];
 pthread_mutex_t sgx_table_lock;
 
-socket_t *server_socket = NULL;
+socket_t *server_socket = nullptr;
 
 time_t current_time = 0;
+uint current_id = 0;
 
-int should_terminate = 0;
+size_t sgxt_lowerbound;
+size_t sgxmax;
+
+/********** PoET variables **********/
 
 /********** GLOBAL VARIABLES **********/
 
-void global_variables_initialization() {
+static void global_variables_initialization() {
     queue = queue_constructor();
     threads_queue = queue_constructor();
     server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
 
-    if (queue == NULL || server_socket == NULL || threads_queue == NULL) {
+    if (queue == nullptr || server_socket == nullptr || threads_queue == nullptr) {
         perror("queue, socket or threads_queue constructor");
         goto error;
     }
@@ -85,12 +93,12 @@ void global_variables_initialization() {
         goto error;
     }
 
-    if (pthread_mutex_init(&sgx_table_lock, NULL) != FALSE) {
+    if (pthread_mutex_init(&sgx_table_lock, nullptr) != FALSE) {
         perror("sgx_table_lock init");
         goto error;
     }
 
-    current_time = time(NULL); // take current time
+    current_time = time(nullptr); // take current time
 
     for (int i = 0; i < MAX_THREADS; i++) {
         queue_push(threads_queue, threads + i);
@@ -103,7 +111,7 @@ void global_variables_initialization() {
     exit(EXIT_FAILURE);
 }
 
-void global_variables_destruction() {
+static void global_variables_destruction() {
     queue_destructor(queue, 1);
     queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
@@ -112,51 +120,51 @@ void global_variables_destruction() {
 }
 
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
-void signal_callback_handler(int signum) {
+static void signal_callback_handler(int signum) {
     should_terminate = 1;
 //    global_variables_destruction();
     fprintf(stderr, "Caught signal %d\n",signum);
     exit(SIGINT);
 }
 
-int received_termination_signal() { // dummy function
+static int received_termination_signal() { // dummy function
     return should_terminate;
 }
 
 /* Check whether the message has the intended JSON structure for communication */
-int check_message_integrity(json_value *json) {
-    assert(json != NULL);
+static int check_message_integrity(json_value *json) {
+    assert(json != nullptr);
     int valid = 1;
 
     valid = valid && json->type == json_object;
     valid = valid && json->u.object.length >= 2;
 
-    json_value *json_method = (valid ? find_value(json, "method") : NULL);
-    valid = valid && json_method != NULL;
+    json_value *json_method = (valid ? find_value(json, "method") : nullptr);
+    valid = valid && json_method != nullptr;
     valid = valid && json_method->type == json_string;
 
     if (valid) {
         char *s = json_method->u.string.ptr;
         int found = 0;
-        for (struct function_handle *i = functions; i->name != NULL && !found; i++) {
+        for (struct function_handle *i = functions; i->name != nullptr && !found; i++) {
             found = found || strcmp(s, i->name) == 0;
         }
 
         valid = valid && found;
     }
 
-    valid = valid && find_value(json, "data") != NULL;
+    valid = valid && find_value(json, "data") != nullptr;
 
     return valid;
 }
 
-int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
+static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     /* FIXME: this assumes that the JSON is well formed, the opposite can happen */
     json_value *json = json_parse(buffer, buffer_len);
 
     int ret = EXIT_SUCCESS;
-    struct function_handle *function = NULL;
-    char *func_name = NULL;
+    struct function_handle *function = nullptr;
+    char *func_name = nullptr;
 
     if (!check_message_integrity(json)) {
         fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
@@ -166,10 +174,10 @@ int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     fprintf(stderr, "JSON message is valid\n");
     func_name = find_value(json, "method")->u.string.ptr;
 
-    for (struct function_handle *i = functions; i->name != NULL && function == NULL; i++) {
-        function = strcmp(func_name, i->name) == 0 ? i : NULL;
+    for (struct function_handle *i = functions; i->name != nullptr && function == nullptr; i++) {
+        function = strcmp(func_name, i->name) == 0 ? i : nullptr;
     }
-    assert(function != NULL);
+    assert(function != nullptr);
 
     printf("Calling: %s\n", function->name);
 
@@ -185,12 +193,12 @@ int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     return ret;
 }
 
-void *process_new_node(void *arg) {
+static void *process_new_node(void *arg) {
     struct thread_tuple *curr_thread = (struct thread_tuple *) arg;
     socket_t *node_socket = (socket_t *) curr_thread->data;
     ERR("Processing node in thread: %p and socket %3d\n", curr_thread->thread, node_socket->socket_descriptor);
 
-    char *buffer = NULL;
+    char *buffer = nullptr;
     size_t buffer_size = 0;
 
     int socket_state;
@@ -207,7 +215,7 @@ void *process_new_node(void *arg) {
         }
 
         free(buffer);
-        buffer = NULL;
+        buffer = nullptr;
 
         socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
     }
@@ -223,14 +231,14 @@ void *process_new_node(void *arg) {
     }
 
     error:
-    if (buffer != NULL) {
+    if (buffer != nullptr) {
         free(buffer);
     }
     socket_destructor(node_socket);
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
 
-    pthread_exit(NULL);
+    pthread_exit(nullptr);
 }
 
 int main(int argc, char *argv[]) {
@@ -239,6 +247,12 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, signal_callback_handler);
 
     global_variables_initialization();
+
+    printf("Enter SGXt lowerbound: ");
+    scanf("%lu", &sgxt_lowerbound);
+
+    printf("Enter SGXt upperbound: ");
+    scanf("%lu", &sgxmax);
 
     ERR("queue: %p | server_socket: %p\n", queue, server_socket);
 
@@ -249,7 +263,7 @@ int main(int argc, char *argv[]) {
 
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_accept(server_socket);
-        if (new_socket == NULL) {
+        if (new_socket == nullptr) {
             fprintf(stderr, "Error accepting socket connection\n");
             continue;
         }
@@ -266,7 +280,7 @@ int main(int argc, char *argv[]) {
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
 
-        int error = pthread_create(next_thread, NULL, &process_new_node, curr_thread);
+        int error = pthread_create(next_thread, nullptr, &process_new_node, curr_thread);
         if (error != FALSE) {
             fprintf(stderr, "A thread could not be created: %p (error code: %d)\n", next_thread, error);
             perror("thread creation");

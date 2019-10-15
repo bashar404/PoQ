@@ -5,6 +5,7 @@ typedef unsigned int uint;
 
 
 struct node {
+    uint node_id;
     uint arrival_time;
     uint sgx_time;
     uint n_leadership;

@@ -5,11 +5,10 @@ enclave {
     from "sgx_tstdc.edl" import *;
 
     trusted {
-        public void ecall_test_print([in, string] const char *msg);
-        public void ecall_random([out] int *a);
+        public void ecall_random_bytes([out, size=len] void *a, size_t len);
     };
 
     untrusted {
-        void ocall_print_msg([in, string] const char *msg);
+
     };
 };

@@ -191,7 +191,7 @@ char *concat_buffers(queue_t *queue) {
 int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
     assert(soc != NULL);
     assert(buffer != NULL);
-    assert(*buffer == NULL);
+//    assert(*buffer == NULL);
     assert(buff_size != NULL);
 
     queue_t *buffer_queue = queue_constructor();

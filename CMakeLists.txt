@@ -6,10 +6,11 @@ set(CMAKE_CXX_STANDARD 11)
 
 include_directories(.)
 
+set(DEBUG)
+set(SGX_HW ON)
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SGX REQUIRED)
-
-#add_compile_definitions(DEBUG)
 
 add_executable(poet_main
         POET++.c queue_t.h socket_t.h socket_t.c queue_t.c
@@ -23,8 +24,8 @@ set(E_SRCS poet_client/enclave/enclave.c)
 set(LDS poet_client/enclave/enclave.lds)
 add_enclave_library(enclave SRCS ${E_SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS} LDSCRIPT ${LDS})
 enclave_sign(enclave KEY poet_client/enclave/enclave_private.pem CONFIG poet_client/enclave/enclave.config.xml)
-set(SRCS poet_client/poet_client.cpp socket_t.c queue_t.c
-        poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c poet_functions.h)
+set(SRCS poet_client/poet_client.cpp poet_client/poet_client.h socket_t.c queue_t.c
+        poet_node_t.h general_structs.h general_structs.c json-parser/json.h json-parser/json.c poet_functions.h poet_functions.c)
 add_untrusted_executable(client SRCS ${SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS})
 add_dependencies(client enclave-sign)
 #add_untrusted_library(poet_client
