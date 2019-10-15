@@ -14,6 +14,14 @@
 #include <unistd.h>
 #include <json-parser/json.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include <JSON-c/JSON_checker.h>
+#ifdef __cplusplus
+};
+#endif
+
 #else
 #include <Windows.h>
 #endif
@@ -74,9 +82,9 @@ uint current_id = 0;
 size_t sgxt_lowerbound;
 size_t sgxmax;
 
-/********** PoET variables **********/
+/********** PoET variables END **********/
 
-/********** GLOBAL VARIABLES **********/
+/********** GLOBAL VARIABLES END **********/
 
 static void global_variables_initialization() {
     queue = queue_constructor();
@@ -131,10 +139,32 @@ static int received_termination_signal() { // dummy function
     return should_terminate;
 }
 
+bool check_json_compliance(const char *buffer, size_t buffer_len) {
+    JSON_checker jc = new_JSON_checker(buffer_len);
+
+    bool is_valid = true;
+    for(int current_pos = 0; (current_pos < buffer_len) && (buffer[current_pos] != '\0') && is_valid ; current_pos++) {
+        int next_char = buffer[current_pos];
+
+        is_valid = JSON_checker_char(jc, next_char);
+
+        if (!is_valid) {
+            fprintf(stderr, "JSON_checker_char: syntax error\n");
+        }
+    }
+
+    is_valid = is_valid && JSON_checker_done(jc);
+    if (!is_valid) {
+        fprintf(stderr, "JSON_checker_end: syntax error\n");
+    }
+
+    return is_valid;
+}
+
 /* Check whether the message has the intended JSON structure for communication */
-static int check_message_integrity(json_value *json) {
+static bool check_message_integrity(json_value *json) {
     assert(json != nullptr);
-    int valid = 1;
+    bool valid = true;
 
     valid = valid && json->type == json_object;
     valid = valid && json->u.object.length >= 2;
@@ -159,14 +189,19 @@ static int check_message_integrity(json_value *json) {
 }
 
 static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
-    /* FIXME: this assumes that the JSON is well formed, the opposite can happen */
-    json_value *json = json_parse(buffer, buffer_len);
-
+    json_value *json = nullptr;
     int ret = EXIT_SUCCESS;
     struct function_handle *function = nullptr;
     char *func_name = nullptr;
 
-    if (!check_message_integrity(json)) {
+    if (! check_json_compliance(buffer, buffer_len)) {
+        fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
+        goto error;
+    }
+
+    json = json_parse(buffer, buffer_len);
+
+    if (! check_message_integrity(json)) {
         fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
@@ -181,7 +216,7 @@ static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
 
     printf("Calling: %s\n", function->name);
 
-    ret = function->function(json->u.object.values[1].value, soc);
+    ret = function->function(find_value(json, "data"), soc);
     goto terminate;
 
     error:
@@ -189,7 +224,9 @@ static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
     ret = EXIT_FAILURE;
 
     terminate:
-    json_value_free(json);
+    if (json != nullptr) {
+        json_value_free(json);
+    }
     return ret;
 }
 
