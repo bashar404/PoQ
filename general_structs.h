@@ -19,12 +19,14 @@ extern "C" {
 
 struct public_key {
     NUM_TYPE key[PUBLIC_KEY_SIZE];
+    char c;
 };
 
 typedef struct public_key public_key_t;
 
 struct signature {
     NUM_TYPE hash[SIGNATURE_SIZE];
+    char c;
 };
 
 typedef struct signature signature_t;
@@ -47,8 +49,9 @@ typedef struct poet_object {
 
 
 char *encode_hex(void *d, size_t len);
-
 void *decode_hex(char *hex, size_t len);
+unsigned char *encode_64base(void *buffer, size_t buffer_len);
+void *decode_64base(char *buffer, size_t buffer_len, size_t *out_len);
 
 #ifdef __cplusplus
 };

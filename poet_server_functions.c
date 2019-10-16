@@ -4,6 +4,8 @@ extern "C" {
 
 #include "poet_node_t.h"
 #include "poet_server_functions.h"
+#include "poet_functions.h"
+#include "general_structs.h"
 #include <stdio.h>
 #include <string.h>
 #include <json-parser/json.h>
@@ -20,7 +22,48 @@ extern size_t sgxmax;
 extern size_t sgxt_lowerbound;
 
 int poet_register(json_value *json, socket_t *socket) {
+    int ret_status = EXIT_SUCCESS;
+
     fprintf(stderr, "Register method is called.\n");
+
+    /**************************************/
+
+    public_key_t node_pk;
+    signature_t node_sign;
+    json_value *pk_json = find_value(json, "public_key");
+    if (pk_json == NULL || pk_json->type != json_string) {
+        fprintf(stderr, "public key from node is not valid or is not present\n");
+        goto error;
+    }
+    char* pk_64base = pk_json->u.string.ptr;
+    size_t pk_64base_len = pk_json->u.string.length;
+
+    json_value *sign_json = find_value(json, "signature");
+    if (sign_json == NULL || sign_json->type != json_string) {
+        fprintf(stderr, "signature from node is not valid or is not present\n");
+        goto error;
+    }
+    char* sign_64base = sign_json->u.string.ptr;
+    size_t sign_64base_len = pk_json->u.string.length;
+
+    size_t buff_len;
+    void * buff = decode_64base(pk_64base, pk_64base_len, &buff_len);
+    if (buff == NULL || buff_len != sizeof(node_pk)) {
+        fprintf(stderr, "public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(node_pk));
+        goto error;
+    }
+    memcpy(&node_pk, buff, sizeof(node_pk));
+
+    buff = decode_64base(sign_64base, sign_64base_len, &buff_len);
+    if (buff == NULL || buff_len != sizeof(node_sign)) {
+        fprintf(stderr, "signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(node_sign));
+        goto error;
+    }
+    memcpy(&node_sign, buff, sizeof(node_sign));
+
+    printf("%c%c <<<<<\n", node_pk.c, node_sign.c);
+
+    /*****************************/
 
     char *msg = malloc(BUFFER_SIZE);
     sprintf(msg, "{\"sgxmax\" : %lu, \"sgxt_lower\": %lu, \"node_id\" : %u}", sgxmax, sgxt_lowerbound, current_id++);
@@ -38,6 +81,9 @@ int poet_register(json_value *json, socket_t *socket) {
 
     int valid = (sgxt_lowerbound <= sgxt && sgxt <= sgxmax);
     printf("SGXt is%s valid: %s\n", (valid ? "" : " not"), (valid ? "true" : "false"));
+
+    error:
+
 
     socket_close(socket);
 

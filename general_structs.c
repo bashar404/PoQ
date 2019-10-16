@@ -7,6 +7,8 @@ extern "C" {
 #include <string.h>
 #include <assert.h>
 
+#include "base64.c"
+
 #include "general_structs.h"
 
 #ifndef max
@@ -50,6 +52,20 @@ char *encode_hex(void *buffer, size_t buffer_len) {
 
     terminate:
     return wbuffer;
+}
+
+unsigned char *encode_64base(void *buffer, size_t buffer_len) {
+    size_t out_len;
+    unsigned char *out = base64_encode((unsigned char *) buffer, buffer_len, &out_len);
+    if (out != NULL) {
+        out[out_len - 1] = '\0';
+    }
+    return out;
+}
+
+void *decode_64base(char *buffer, size_t buffer_len, size_t *out_len) {
+    assert(out_len != NULL);
+    return base64_decode(buffer, buffer_len, out_len);
 }
 
 unsigned char hexchr2bin(const char hex) {
