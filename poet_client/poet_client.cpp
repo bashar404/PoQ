@@ -7,6 +7,7 @@
 
 #include "socket_t.h"
 #include "poet_functions.h"
+#include "json_checks.h"
 #include "enclave_helper.h"
 
 #include "sgx_error.h"       /* sgx_status_t */

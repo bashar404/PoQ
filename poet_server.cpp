@@ -12,15 +12,6 @@
 #ifndef _WIN32
 
 #include <unistd.h>
-#include <json-parser/json.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include <JSON-c/JSON_checker.h>
-#ifdef __cplusplus
-};
-#endif
 
 #else
 #include <Windows.h>
@@ -44,6 +35,7 @@ extern "C" {
 #include "general_structs.h"
 #include "poet_server_functions.h"
 #include "poet_functions.h"
+#include "json_checks.h"
 
 #ifdef ERR
 #undef ERR
@@ -137,28 +129,6 @@ static void signal_callback_handler(int signum) {
 
 static int received_termination_signal() { // dummy function
     return should_terminate;
-}
-
-bool check_json_compliance(const char *buffer, size_t buffer_len) {
-    JSON_checker jc = new_JSON_checker(buffer_len);
-
-    bool is_valid = true;
-    for(int current_pos = 0; (current_pos < buffer_len) && (buffer[current_pos] != '\0') && is_valid ; current_pos++) {
-        int next_char = buffer[current_pos];
-
-        is_valid = JSON_checker_char(jc, next_char);
-
-        if (!is_valid) {
-            fprintf(stderr, "JSON_checker_char: syntax error\n");
-        }
-    }
-
-    is_valid = is_valid && JSON_checker_done(jc);
-    if (!is_valid) {
-        fprintf(stderr, "JSON_checker_end: syntax error\n");
-    }
-
-    return is_valid;
 }
 
 /* Check whether the message has the intended JSON structure for communication */
