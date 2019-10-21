@@ -4,7 +4,6 @@
 extern "C" {
 #endif
 
-#include <json-parser/json.h>
 #include <assert.h>
 #include <string.h>
 

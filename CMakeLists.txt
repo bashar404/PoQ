@@ -45,6 +45,6 @@ add_dependencies(client enclave-sign)
 
 add_executable(poet_server
         poet_server.cpp socket_t.c queue_t.c
-        general_structs.c json-parser/json.c poet_server_functions.c poet_functions.c
+        general_structs.c json-parser/json.c poet_server_functions.cpp poet_functions.c
         JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c json_checks.c)
 target_link_libraries(poet_server m pthread)
