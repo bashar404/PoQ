@@ -14,50 +14,59 @@
 #define BUFFER_SIZE 2048
 
 extern node_t *sgx_table;
-extern pthread_mutex_t sgx_table_lock;
+extern pthread_rwlock_t sgx_table_lock;
 extern time_t current_time;
-pthread_mutex_t current_time_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_rwlock_t current_time_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 extern uint current_id;
-pthread_mutex_t current_id_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_rwlock_t current_id_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 extern size_t sgxmax;
 extern size_t sgxt_lowerbound;
 
 std::unordered_map<std::string, uint> public_keys;
-pthread_mutex_t public_keys_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_rwlock_t public_keys_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 /** Checks if Public key and Signature is valid (for now just checks if its non-zero) and is not already registered */
 static bool check_public_key_and_signature_registration(const std::string &pk_str, const std::string &sign_str) {
+    void *buff;
+
+    pthread_rwlock_rdlock(&public_keys_lock);
     bool valid = public_keys.count(pk_str) == 0; // is not already registered
 
     if (!valid) {
         uint node = public_keys[pk_str];
         fprintf(stderr, "This PK is already registered for node %u\n", node);
-        return valid;
     }
+    pthread_rwlock_unlock(&public_keys_lock);
 
     public_key_t pk;
     size_t buff_len;
-    void *buff = decode_64base(pk_str.c_str(), pk_str.length(), &buff_len);
-    if (buff == nullptr || buff_len != sizeof(public_key_t)) {
-        fprintf(stderr, "public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
-                sizeof(public_key_t));
-        valid = false;
-    }
-    memcpy(&pk, buff, sizeof(pk));
-    if (buff != nullptr) {
-        free(buff);
+    if (valid) {
+        buff = decode_64base(pk_str.c_str(), pk_str.length(), &buff_len);
+        if (buff == nullptr || buff_len != sizeof(public_key_t)) {
+            fprintf(stderr, "public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
+                    sizeof(public_key_t));
+            valid = false;
+        }
+        memcpy(&pk, buff, sizeof(pk));
+        if (buff != nullptr) {
+            free(buff);
+        }
     }
 
     signature_t sign;
-    buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
-    if (buff == nullptr || buff_len != sizeof(signature_t)) {
-        fprintf(stderr, "signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
-                sizeof(signature_t));
-        valid = false;
-    }
-    memcpy(&sign, buff, sizeof(sign));
-    if (buff != nullptr) {
-        free(buff);
+    if (valid) {
+        buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
+        if (buff == nullptr || buff_len != sizeof(signature_t)) {
+            fprintf(stderr, "signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
+                    sizeof(signature_t));
+            valid = false;
+        }
+        memcpy(&sign, buff, sizeof(sign));
+        if (buff != nullptr) {
+            free(buff);
+        }
     }
 
     auto *pk_8 = (uint8_t *) &pk;
@@ -77,14 +86,14 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
 
 int poet_register(json_value *json, socket_t *socket) {
     int ret_status = EXIT_SUCCESS;
-    int valid;
-    char *msg;
-    void *buff;
-    char *sign_64base;
-    size_t sign_64base_len;
-    char *pk_64base;
-    size_t pk_64base_len;
-    json_value *sign_json;
+    char *msg = nullptr;
+    void *buff = nullptr;
+    char *sign_64base = nullptr;
+    size_t sign_64base_len = 0;
+    char *pk_64base = nullptr;
+    size_t pk_64base_len = 0;
+    json_value *sign_json = nullptr;
+    uint node_id = 0;
 
     fprintf(stderr, "Register method is called.\n");
 
@@ -105,13 +114,14 @@ int poet_register(json_value *json, socket_t *socket) {
     sign_64base = sign_json->u.string.ptr;
 
     if (check_public_key_and_signature_registration(std::string(pk_64base), std::string(sign_64base))) {
-        pthread_mutex_lock(&current_id_lock);
-        uint id = current_id++;
-        pthread_mutex_unlock(&current_id_lock);
+        pthread_rwlock_wrlock(&current_id_lock);
+        pthread_rwlock_wrlock(&public_keys_lock);
 
-        pthread_mutex_lock(&public_keys_lock);
-        public_keys.insert({std::string(pk_64base), id});
-        pthread_mutex_unlock(&public_keys_lock);
+        node_id = current_id++;
+        public_keys.insert({std::string(pk_64base), node_id});
+
+        pthread_rwlock_unlock(&public_keys_lock);
+        pthread_rwlock_unlock(&current_id_lock);
     } else {
         fprintf(stderr, "The PK or the Signature is not valid, closing connection ...\n");
         ret_status = EXIT_FAILURE;
@@ -121,12 +131,12 @@ int poet_register(json_value *json, socket_t *socket) {
     /*****************************/
 
     msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u}})", sgxmax, sgxt_lowerbound, current_id-1);
+    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u}})", sgxmax, sgxt_lowerbound, node_id);
     printf("Server is sending sgxmax (%lu) to the node\n", sgxmax);
     socket_send_message(socket, msg, strlen(msg));
     free(msg);
 
-    if (valid) goto terminate;
+    goto terminate;
 
     error:
     socket_close(socket);

@@ -64,7 +64,7 @@ queue_t *threads_queue = nullptr;
 queue_t *queue = nullptr;
 
 node_t sgx_table[MAX_NODES];
-pthread_mutex_t sgx_table_lock;
+pthread_rwlock_t sgx_table_lock;
 
 socket_t *server_socket = nullptr;
 
@@ -93,7 +93,7 @@ static void global_variables_initialization() {
         goto error;
     }
 
-    if (pthread_mutex_init(&sgx_table_lock, nullptr) != FALSE) {
+    if (pthread_rwlock_init(&sgx_table_lock, nullptr) != FALSE) {
         perror("sgx_table_lock init");
         goto error;
     }
@@ -116,7 +116,7 @@ static void global_variables_destruction() {
     queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
 
-    pthread_mutex_destroy(&sgx_table_lock);
+    pthread_rwlock_destroy(&sgx_table_lock);
 }
 
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process

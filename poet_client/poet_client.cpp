@@ -70,7 +70,7 @@ static int poet_remote_attestation_to_server() {
     if (buffer == nullptr) {
         return 0;
     }
-    
+
     state = check_json_compliance(buffer, len) == 1;
     if (state == 0) {
         return 0;
@@ -78,7 +78,7 @@ static int poet_remote_attestation_to_server() {
 
     json_value *json = json_parse(buffer, len);
     json_value *json_status = find_value(json, "status");
-    if (json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0 ) {
+    if (json_status == nullptr || json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0 ) {
         fprintf(stderr, "Remote attestation was not successfull\n");
         state = 0;
     } else {
@@ -144,7 +144,7 @@ static int poet_register_to_server() {
     json = json_parse(buffer, len);
 
     json_status = find_value(json, "status");
-    if (json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0) {
+    if (json_status == nullptr || json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0) {
         state = 0;
         goto error;
     }
