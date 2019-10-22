@@ -3,9 +3,13 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <assert.h>
 #include "json_checks.h"
 
 int check_json_compliance(const char *buffer, size_t buffer_len) {
+    assert(buffer != NULL);
+    assert(buffer_len > 0);
+
     JSON_checker jc = new_JSON_checker(buffer_len);
 
     int is_valid = 1;

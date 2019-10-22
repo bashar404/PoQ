@@ -54,7 +54,7 @@ char *encode_hex(void *buffer, size_t buffer_len) {
     return wbuffer;
 }
 
-unsigned char *encode_64base(void *buffer, size_t buffer_len) {
+unsigned char *encode_64base(const void *buffer, size_t buffer_len) {
     size_t out_len;
     unsigned char *out = base64_encode((unsigned char *) buffer, buffer_len, &out_len);
     if (out != NULL) {
@@ -63,7 +63,7 @@ unsigned char *encode_64base(void *buffer, size_t buffer_len) {
     return out;
 }
 
-void *decode_64base(char *buffer, size_t buffer_len, size_t *out_len) {
+void *decode_64base(const char *buffer, size_t buffer_len, size_t *out_len) {
     assert(out_len != NULL);
     return base64_decode(buffer, buffer_len, out_len);
 }
