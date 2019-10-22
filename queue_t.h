@@ -28,7 +28,7 @@ struct queue {
     size_t size;
     struct item *head;
     struct item *tail;
-    pthread_mutex_t *lock;
+    pthread_rwlock_t *lock;
 };
 
 typedef struct item item_t;
