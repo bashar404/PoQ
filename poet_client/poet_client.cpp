@@ -1,9 +1,13 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cassert>
 #include <cstring>
 #include <unistd.h>
 #include <json-parser/json.h>
 #include <general_structs.h>
+#include <vector>
+#include <string>
+#include <queue>
 
 #include "socket_t.h"
 #include "poet_functions.h"
@@ -36,6 +40,13 @@ uint sgxt;
 uint sgxmax;
 uint sgx_lowerbound;
 uint node_id;
+
+public_key_t public_key;
+signature_t signature;
+
+/* Dynamic variables */
+std::vector<node_t> sgx_table;
+std::vector<uint> queue; // intentionally not a real queue
 
 void global_variable_initialization() {
     node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
@@ -119,9 +130,9 @@ static int poet_register_to_server() {
     json_value *json = nullptr;
     json_value *json_status = nullptr;
 
-    public_key_t pk;
+    public_key_t &pk = public_key;
     fill_with_rand(&pk, sizeof(public_key_t)); // TODO: change
-    signature_t sign;
+    signature_t &sign = signature;
     fill_with_rand(&sign, sizeof(signature_t));
 
     unsigned char *pk_64base = encode_64base(&pk, sizeof(pk));
@@ -236,6 +247,157 @@ static int poet_register_to_server() {
     return state;
 }
 
+static std::string node_to_json(const node_t &node) { // move to general methods
+    char *buffer = (char *) malloc(BUFFER_SZ);
+    sprintf(buffer, R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u})",
+            node.node_id,
+            node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+    std::string s(buffer);
+    free(buffer);
+    return s;
+}
+
+static int convert_json_to_node_t(json_value *root, node_t &node) {
+    assert(root != nullptr);
+    assert(root->type = json_object);
+
+    int state = 1;
+    json_value *value = nullptr;
+
+    value = find_value(root, "node_id");
+    state = state && value != nullptr;
+    if (state) node.node_id = value->u.integer;
+
+    value = state ? find_value(root, "sgx_time") : nullptr;
+    state = state && value != nullptr;
+    if (state) node.sgx_time = value->u.integer;
+
+    value = state ? find_value(root, "n_leadership") : nullptr;
+    state = state && value != nullptr;
+    if (state) node.n_leadership = value->u.integer;
+
+    value = state ? find_value(root, "time_left") : nullptr;
+    state = state && value != nullptr;
+    if (state) node.time_left = value->u.integer;
+
+    value = state ? find_value(root, "arrival_time") : nullptr;
+    state = state && value != nullptr;
+    if (state) node.arrival_time = value->u.integer;
+
+    return state;
+}
+
+static int get_sgx_table() {
+    json_value *json = nullptr;
+
+    char *buffer = (char *) malloc(BUFFER_SZ);
+    sprintf(buffer, R"({"method":"get_sgxtable", "data": null})");
+    socket_send_message(node_socket, buffer, strlen(buffer));
+    free(buffer);
+    buffer = nullptr;
+
+    size_t len;
+    bool state = socket_get_message(node_socket, (void **) &buffer, &len) > 0;
+
+    state = state && check_json_compliance(buffer, len);
+    if (state) {
+        json = json_parse(buffer, len);
+        json_value *json_status = find_value(json, "status");
+        if (json_status == nullptr || json_status->type != json_string ||
+            strcmp(json_status->u.string.ptr, "success") != 0) {
+            state = 0;
+        }
+    }
+
+    json_value *json_sgx_table = nullptr;
+
+    if (state) {
+        json_sgx_table = find_value(json, "sgx_table");
+        if (json_sgx_table == nullptr || json_sgx_table->type != json_array) {
+            state = false;
+        }
+    }
+
+    if (state) {
+        sgx_table.clear();
+
+        json_value **json_node = json_sgx_table->u.array.begin();
+        while(state && json_node != json_sgx_table->u.array.end()) {
+            node_t node;
+            state = convert_json_to_node_t(*json_node, node);
+            json_node++;
+            sgx_table.push_back(node);
+        }
+    }
+
+    if (json != nullptr) {
+        json_value_free(json);
+    }
+
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    return state;
+}
+
+static int get_queue() {
+    json_value *json = nullptr;
+
+    char *buffer = (char *) malloc(BUFFER_SZ);
+    sprintf(buffer, R"({"method":"get_queue", "data": null})");
+    int state = socket_send_message(node_socket, buffer, strlen(buffer));
+    free(buffer);
+    buffer = nullptr;
+
+    size_t len;
+    state = state && socket_get_message(node_socket, (void **) &buffer, &len) > 0;
+
+    state = state && check_json_compliance(buffer, len);
+    if (state) {
+        json = json_parse(buffer, len);
+        json_value *json_status = find_value(json, "status");
+        if (json_status == nullptr || json_status->type != json_string ||
+            strcmp(json_status->u.string.ptr, "success") != 0) {
+            state = 0;
+        }
+    }
+
+    json_value *json_queue = nullptr;
+
+    if (state) {
+        json_queue = find_value(json, "queue");
+        if (json_queue == nullptr || json_queue->type != json_array) {
+            state = 0;
+        }
+    }
+
+    if (state) {
+        /* Empty the queue */
+        queue.clear();
+
+        json_value **json_node = json_queue->u.array.begin();
+        while(state && json_node != json_queue->u.array.end()) {
+            uint nid = 0;
+            json_value *value = find_value(*json_node, "node_id");
+            state = value != nullptr && value->type == json_integer;
+            nid = value->u.integer;
+            json_node++;
+            queue.push_back(nid);
+        }
+    }
+
+    if (json != nullptr) {
+        json_value_free(json);
+    }
+
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    return state;
+}
+
 int main(int argc, char *argv[]) {
     // TODO: receive parameters by command line
 
@@ -256,8 +418,26 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Something failed ...\n");
     }
 
-    printf("Enter character to exit (%lu).\n", eid);
-    getchar();
+    state = state && get_sgx_table();
+    if (state) {
+        printf("SGX Table:\n---------------------\n");
+        for(auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
+            printf("%s\n", node_to_json(*i).c_str());
+        }
+        printf("---------------------\n");
+    }
+
+    state = state && get_queue();
+    if (state) {
+        printf("Queue: ");
+        for(auto i = queue.begin(); i != queue.end(); i++) {
+            printf("[%u]", *i);
+        }
+        printf("\n");
+    }
+
+//    printf("Enter character to exit (%lu).\n", eid);
+//    getchar();
 
 //    printf("Ctrl+C to destroy enclave (%lu).\n", eid);
 //    sleep(2*60);

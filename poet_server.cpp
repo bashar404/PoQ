@@ -58,8 +58,10 @@ queue_t *threads_queue = nullptr;
 /********** PoET variables **********/
 
 queue_t *queue = nullptr;
+pthread_rwlock_t queue_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 std::vector<node_t *> sgx_table;
+pthread_rwlock_t sgx_table_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 socket_t *server_socket = nullptr;
 
@@ -88,12 +90,7 @@ static void global_variables_initialization() {
         goto error;
     }
 
-//    if (pthread_rwlock_init(&sgx_table_lock, nullptr) != FALSE) {
-//        perror("sgx_table_lock init");
-//        goto error;
-//    }
-
-    current_time = time(nullptr); // take current time
+    current_time = time(nullptr); // FIXME: maybe not necessary
 
     for (int i = 0; i < MAX_THREADS; i++) {
         queue_push(threads_queue, threads + i);
@@ -110,8 +107,6 @@ static void global_variables_destruction() {
     queue_destructor(queue, 1);
     queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
-
-//    pthread_rwlock_destroy(&sgx_table_lock);
 }
 
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
@@ -153,9 +148,9 @@ static bool check_message_integrity(json_value *json) {
     return valid;
 }
 
-static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poet_context *context) {
+static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poet_context *context) {
     json_value *json = nullptr;
-    int ret = EXIT_SUCCESS;
+    bool ret = true;
     struct function_handle *function = nullptr;
     char *func_name = nullptr;
 
@@ -186,7 +181,7 @@ static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poet
 
     error:
     fprintf(stderr, "method delegation finished with failure\n");
-    ret = EXIT_FAILURE;
+    ret = false;
 
     terminate:
     if (json != nullptr) {
@@ -213,7 +208,7 @@ static void *process_new_node(void *arg) {
                curr_thread->thread,
                buffer);
 
-        if (delegate_message(buffer, buffer_size, node_socket, &context) != 0) {
+        if (!delegate_message(buffer, buffer_size, node_socket, &context)) {
             goto error;
         }
 

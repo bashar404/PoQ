@@ -113,7 +113,7 @@ socket_t *socket_accept(socket_t *soc) {
 
     int new_socket_fd;
     if ((new_socket_fd = accept(soc->socket_descriptor, (struct sockaddr *) &(soc->address),
-                                (socklen_t * ) & (soc->addrlen))) < 0)
+                                (socklen_t *) &(soc->addrlen))) < 0)
         goto error;
 
     socket_t *new_socket = malloc(sizeof(socket_t));
@@ -178,7 +178,7 @@ char *concat_buffers(queue_t *queue) {
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with receiving message");
+    fprintf(stderr, "Fatal error, can not proceed with receiving message\n");
     if (buffer != NULL) {
         free(buffer);
     }
@@ -232,7 +232,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with receiving message");
+    fprintf(stderr, "Fatal error, can not proceed with receiving message\n");
 
     terminate:
     queue_destructor(buffer_queue, 1);
@@ -266,10 +266,18 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
         total_sent += sent;
     } while (total_sent < buffer_len);
 
+#ifndef NDEBUG
+    do {
+        const char *emsg = "Buffer sent: [%%.%lus]\n";
+        char msg[BUFFER_SIZE];
+        sprintf(msg, emsg, buffer_len);
+        ERR(msg, buffer);
+    } while (0);
+#endif
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with sending message");
+    fprintf(stderr, "Fatal error, can not proceed with sending message\n");
     total_sent = 0;
 
     terminate:
