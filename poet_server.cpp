@@ -1,13 +1,10 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
-#include <cctype>
 #include <cstring>
 #include <ctime>
 #include <cassert>
-#include <thread>
-#include <cerrno>
 #include <csignal>
+#include <vector>
 
 #ifndef _WIN32
 
@@ -31,7 +28,6 @@
 
 #include "socket_t.h"
 #include "queue_t.h"
-#include "poet_node_t.h"
 #include "general_structs.h"
 #include "poet_server_functions.h"
 #include "poet_functions.h"
@@ -63,8 +59,7 @@ queue_t *threads_queue = nullptr;
 
 queue_t *queue = nullptr;
 
-node_t sgx_table[MAX_NODES];
-pthread_rwlock_t sgx_table_lock;
+std::vector<node_t *> sgx_table;
 
 socket_t *server_socket = nullptr;
 
@@ -93,10 +88,10 @@ static void global_variables_initialization() {
         goto error;
     }
 
-    if (pthread_rwlock_init(&sgx_table_lock, nullptr) != FALSE) {
-        perror("sgx_table_lock init");
-        goto error;
-    }
+//    if (pthread_rwlock_init(&sgx_table_lock, nullptr) != FALSE) {
+//        perror("sgx_table_lock init");
+//        goto error;
+//    }
 
     current_time = time(nullptr); // take current time
 
@@ -116,7 +111,7 @@ static void global_variables_destruction() {
     queue_destructor(threads_queue, 0);
     socket_destructor(server_socket);
 
-    pthread_rwlock_destroy(&sgx_table_lock);
+//    pthread_rwlock_destroy(&sgx_table_lock);
 }
 
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
@@ -158,7 +153,7 @@ static bool check_message_integrity(json_value *json) {
     return valid;
 }
 
-static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
+static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poet_context *context) {
     json_value *json = nullptr;
     int ret = EXIT_SUCCESS;
     struct function_handle *function = nullptr;
@@ -186,7 +181,7 @@ static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
 
     printf("Calling: %s\n", function->name);
 
-    ret = function->function(find_value(json, "data"), soc);
+    ret = function->function(find_value(json, "data"), soc, context);
     goto terminate;
 
     error:
@@ -201,12 +196,13 @@ static int delegate_message(char *buffer, size_t buffer_len, socket_t *soc) {
 }
 
 static void *process_new_node(void *arg) {
-    struct thread_tuple *curr_thread = (struct thread_tuple *) arg;
-    socket_t *node_socket = (socket_t *) curr_thread->data;
+    auto *curr_thread = (struct thread_tuple *) arg;
+    auto *node_socket = (socket_t *) curr_thread->data;
     ERR("Processing node in thread: %p and socket %3d\n", curr_thread->thread, node_socket->socket_descriptor);
 
     char *buffer = nullptr;
     size_t buffer_size = 0;
+    poet_context context{};
 
     int socket_state;
     socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
@@ -217,7 +213,7 @@ static void *process_new_node(void *arg) {
                curr_thread->thread,
                buffer);
 
-        if (delegate_message(buffer, buffer_size, node_socket) != 0) {
+        if (delegate_message(buffer, buffer_size, node_socket, &context) != 0) {
             goto error;
         }
 
@@ -281,9 +277,9 @@ int main(int argc, char *argv[]) {
             checking = queue_is_empty(threads_queue);
         } while (checking);
 
-        pthread_t *next_thread = (pthread_t *) queue_front(threads_queue);
+        auto *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
-        struct thread_tuple *curr_thread = (struct thread_tuple *) malloc(sizeof(struct thread_tuple));
+        auto *curr_thread = (struct thread_tuple *) malloc(sizeof(struct thread_tuple));
         curr_thread->thread = next_thread;
         curr_thread->data = new_socket;
 

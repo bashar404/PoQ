@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 
+void sgx_print_error_message(sgx_status_t ret);
 int initialize_enclave(sgx_enclave_id_t *eid);
 
 #ifdef __cplusplus

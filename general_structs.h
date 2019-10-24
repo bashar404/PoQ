@@ -17,38 +17,36 @@ extern "C" {
 #define SIGNATURE_BITS_SIZE 256
 #define SIGNATURE_SIZE (SIGNATURE_BITS_SIZE / 8)
 
-struct public_key {
+typedef unsigned int uint;
+
+typedef struct node {
+    uint node_id;
+    uint arrival_time;
+    uint sgx_time;
+    uint n_leadership;
+    uint time_left;
+} node_t;
+
+typedef struct public_key {
     NUM_TYPE key[PUBLIC_KEY_SIZE];
-};
+} public_key_t;
 
-typedef struct public_key public_key_t;
-
-struct signature {
+typedef struct signature {
     NUM_TYPE hash[SIGNATURE_SIZE];
+} signature_t;
+
+struct poet_context {
+    node_t *node;
+    public_key_t *public_key;
+    signature_t *signature;
 };
-
-typedef struct signature signature_t;
-
-typedef enum {
-    poet_none,
-    poet_public_key,
-    poet_signature
-} poet_type;
-
-union poet_generic_object {
-    public_key_t pk;
-    signature_t signature;
-};
-
-typedef struct poet_object {
-    poet_type type;
-    union poet_generic_object value;
-} poet_object_t;
-
 
 char *encode_hex(void *d, size_t len);
-void *decode_hex(char *hex, size_t len);
+
+void *decode_hex(const char *buffer, size_t buffer_len);
+
 unsigned char *encode_64base(const void *buffer, size_t buffer_len);
+
 void *decode_64base(const char *buffer, size_t buffer_len, size_t *out_len);
 
 #ifdef __cplusplus

@@ -49,8 +49,8 @@ static void fill_with_rand(void *input, size_t len) {
     srand(time(nullptr));
     auto *ptr = (unsigned char *) input;
 
-    for(int i = 0; i < len; i++) {
-        *(ptr+i) = rand() % 256;
+    for (int i = 0; i < len; i++) {
+        *(ptr + i) = rand() % 256;
     }
 }
 
@@ -66,7 +66,7 @@ static int poet_remote_attestation_to_server() {
     socket_send_message(node_socket, buffer, len);
 
     free(buffer);
-    socket_get_message(node_socket, (void **)(&buffer), &len);
+    socket_get_message(node_socket, (void **) (&buffer), &len);
     if (buffer == nullptr) {
         return 0;
     }
@@ -78,11 +78,16 @@ static int poet_remote_attestation_to_server() {
 
     json_value *json = json_parse(buffer, len);
     json_value *json_status = find_value(json, "status");
-    if (json_status == nullptr || json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0 ) {
-        fprintf(stderr, "Remote attestation was not successfull\n");
+    if (json_status == nullptr || json_status->type != json_string ||
+        strcmp(json_status->u.string.ptr, "success") != 0) {
+        fprintf(stderr, "Remote attestation was not successful\n");
         state = 0;
     } else {
-        printf("Remote attestation was sucecssfull\n");
+        printf("Remote attestation was successful\n");
+    }
+
+    if (json != nullptr) {
+        json_value_free(json);
     }
 
 #else
@@ -96,25 +101,29 @@ static int poet_remote_attestation_to_server() {
 }
 
 static uint generate_random_sgx_time() {
-    uint sgxt = 0;
-    if (ecall_random_bytes(eid, &sgxt, sizeof(sgxt)) != SGX_SUCCESS) {
+    uint sgx_time = 0;
+    sgx_status_t ret = ecall_random_bytes(eid, &sgx_time, sizeof(sgx_time));
+    if (ret != SGX_SUCCESS) {
         fprintf(stderr, "Something happened with the enclave :c\n");
+        sgx_print_error_message(ret);
+        exit(EXIT_FAILURE);
     }
-    sgxt = sgx_lowerbound + sgxt % (sgxmax - sgx_lowerbound + 1);
+    sgx_time = sgx_lowerbound + sgx_time % (sgxmax - sgx_lowerbound + 1);
 
-    return sgxt;
+    return sgx_time;
 }
 
 static int poet_register_to_server() {
     char *buffer = (char *) malloc(BUFFER_SZ);
     int state = 1;
-    json_value *json;
-    json_value *json_status;
+    json_value *json = nullptr;
+    json_value *json_status = nullptr;
 
     public_key_t pk;
     fill_with_rand(&pk, sizeof(public_key_t)); // TODO: change
     signature_t sign;
     fill_with_rand(&sign, sizeof(signature_t));
+
     unsigned char *pk_64base = encode_64base(&pk, sizeof(pk));
     unsigned char *sign_64base = encode_64base(&sign, sizeof(sign));
     if (pk_64base == nullptr || sign_64base == nullptr) {
@@ -137,50 +146,91 @@ static int poet_register_to_server() {
     socket_get_message(node_socket, (void **) (&buffer), &len);
 
     state = check_json_compliance(buffer, len);
-    if (state == 0) {
-        goto error;
-    }
 
-    json = json_parse(buffer, len);
+    if (state) {
+        json = json_parse(buffer, len);
 
-    json_status = find_value(json, "status");
-    if (json_status == nullptr || json_status->type != json_string || strcmp(json_status->u.string.ptr, "success") != 0) {
-        state = 0;
-        goto error;
+        json_status = find_value(json, "status");
+        if (json_status == nullptr || json_status->type != json_string ||
+            strcmp(json_status->u.string.ptr, "success") != 0) {
+            state = 0;
+        }
     }
 
     if (state) {
-        sgxmax = find_value(json, "sgxmax")->u.integer;
-        sgx_lowerbound = find_value(json, "sgxt_lower")->u.integer;
-        node_id = find_value(json, "node_id")->u.integer;
+        json_value *json_tmp = find_value(json, "sgxmax");
+        state = json_tmp != nullptr && json_tmp->type == json_integer;
+        if (state) sgxmax = json_tmp->u.integer;
+
+        json_tmp = find_value(json, "sgxt_lower");
+        state = json_tmp != nullptr && json_tmp->type == json_integer;
+        if (state) sgx_lowerbound = find_value(json, "sgxt_lower")->u.integer;
+
+        json_tmp = find_value(json, "node_id");
+        state = json_tmp != nullptr && json_tmp->type == json_integer;
+        if (state) node_id = find_value(json, "node_id")->u.integer;
     }
 
-    printf("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
-           node_id);
-
-    // respond the server with sgxt
+    if (state)
+        printf("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
+               node_id);
 
     if (state) {
         // if everything went well then do the remote attestation
         state = poet_remote_attestation_to_server();
     }
 
+    // respond the server with sgxt
     free(buffer);
     if (state) {
         sgxt = generate_random_sgx_time();
         printf("SGXt is generated: %u\n", sgxt);
 
         buffer = (char *) malloc(BUFFER_SZ);
-        sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt" : %u}})", sgxt); // TODO: should send its identity from the enclave in it
+        if (buffer == nullptr) {
+            perror("malloc");
+            state = 0;
+            goto error;
+        }
+        sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt" : %u}})",
+                sgxt); // TODO: should send its identity from the enclave in it
         printf("Sending SGXt (%u) to the server\n", sgxt);
-        socket_send_message(node_socket, buffer, strlen(buffer));
+        state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
+
+        free(buffer);
+        buffer = nullptr;
+    }
+
+    json_value_free(json);
+    json = nullptr;
+
+    if (state) { // getting reply of success
+        socket_get_message(node_socket, (void **) &buffer, &len);
+        state = check_json_compliance(buffer, len);
+        if (state) {
+            json = json_parse(buffer, len);
+
+            json_status = find_value(json, "status");
+            if (json_status == nullptr || json_status->type != json_string ||
+                strcmp(json_status->u.string.ptr, "success") != 0) {
+                state = 0;
+            }
+
+            json_value_free(json);
+            json = nullptr;
+        }
     }
 
     error:
+    printf("Server registration %s\n", state ? "successful" : "failed");
     sgx_destroy_enclave(eid);
 
     if (buffer != nullptr) {
         free(buffer);
+    }
+
+    if (json != nullptr) {
+        json_value_free(json);
     }
 
     return state;
@@ -202,7 +252,7 @@ int main(int argc, char *argv[]) {
     ERR("Connection established\n");
 
     int state = poet_register_to_server();
-    if (! state) {
+    if (!state) {
         fprintf(stderr, "Something failed ...\n");
     }
 

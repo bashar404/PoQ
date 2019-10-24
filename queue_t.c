@@ -133,17 +133,31 @@ void queue_push(queue_t *q, void *d) {
     fprintf(stderr, "Could not allocate new item into queue\n");
 }
 
+static void generic_print(void *d) {
+    if (d == NULL) {
+        printf("[NIL]");
+        return;
+    }
+    printf("[%u]", *((unsigned int *) d));
+}
+
 void queue_print(queue_t *q) {
     assert(q != NULL);
+    queue_print_func(q, generic_print);
+}
+
+void queue_print_func(queue_t *q, void (*print_func)(void *d)) {
+    assert(q != NULL);
+    assert(print_func != NULL);
 
     if (queue_is_empty(q)) {
-        printf("[NILL]\n");
+        print_func(NULL);
         return;
     }
 
     pthread_rwlock_rdlock(q->lock);
     for (item_t *i = q->head; i != NULL; i = i->next) {
-        printf("[%u]", *((unsigned int *) i->d));
+        print_func(i->d);
     }
     pthread_rwlock_unlock(q->lock);
     printf("\n");

@@ -65,7 +65,7 @@ unsigned char *encode_64base(const void *buffer, size_t buffer_len) {
 
 void *decode_64base(const char *buffer, size_t buffer_len, size_t *out_len) {
     assert(out_len != NULL);
-    return base64_decode(buffer, buffer_len, out_len);
+    return base64_decode((const unsigned char *) buffer, buffer_len, out_len);
 }
 
 unsigned char hexchr2bin(const char hex) {
@@ -82,7 +82,7 @@ unsigned char hexchr2bin(const char hex) {
     return c;
 }
 
-void *decode_hex(char *buffer, size_t buffer_len) {
+void *decode_hex(const char *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 

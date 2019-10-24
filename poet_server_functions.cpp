@@ -1,20 +1,23 @@
-#include "poet_node_t.h"
 #include "poet_server_functions.h"
 #include "poet_functions.h"
 #include "general_structs.h"
+#include "queue_t.h"
 #include <cstdio>
 #include <cstring>
+#include <cassert>
 
-
-#include <unordered_map>
+#include <map>
 #include <string>
+#include <vector>
 
 #define FUNC_PAIR(NAME)  { #NAME, poet_ ## NAME }
 
 #define BUFFER_SIZE 2048
 
-extern node_t *sgx_table;
-extern pthread_rwlock_t sgx_table_lock;
+extern queue_t *queue;
+extern std::vector<node_t *> sgx_table;
+pthread_rwlock_t sgx_table_lock = PTHREAD_RWLOCK_INITIALIZER;
+
 extern time_t current_time;
 pthread_rwlock_t current_time_lock = PTHREAD_RWLOCK_INITIALIZER;
 
@@ -24,11 +27,14 @@ pthread_rwlock_t current_id_lock = PTHREAD_RWLOCK_INITIALIZER;
 extern size_t sgxmax;
 extern size_t sgxt_lowerbound;
 
-std::unordered_map<std::string, uint> public_keys;
+std::map<std::string, uint> public_keys;
 pthread_rwlock_t public_keys_lock = PTHREAD_RWLOCK_INITIALIZER;
 
+// TODO: create two functions to lock and unlock all specified locks depending on their memory address to avoid deadlocks
+
 /** Checks if Public key and Signature is valid (for now just checks if its non-zero) and is not already registered */
-static bool check_public_key_and_signature_registration(const std::string &pk_str, const std::string &sign_str) {
+static bool check_public_key_and_signature_registration(const std::string &pk_str, const std::string &sign_str,
+                                                        poet_context *context) {
     void *buff;
 
     pthread_rwlock_rdlock(&public_keys_lock);
@@ -40,7 +46,10 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     }
     pthread_rwlock_unlock(&public_keys_lock);
 
-    public_key_t pk;
+    context->public_key = new public_key_t();
+    context->signature = new signature_t();
+
+    public_key_t &pk = *(context->public_key);
     size_t buff_len;
     if (valid) {
         buff = decode_64base(pk_str.c_str(), pk_str.length(), &buff_len);
@@ -55,7 +64,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
         }
     }
 
-    signature_t sign;
+    signature_t &sign = *(context->signature);
     if (valid) {
         buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(signature_t)) {
@@ -78,13 +87,17 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     auto *sign_8 = (uint8_t *) &sign;
     len = sizeof(signature_t);
     for (int i = 0; i < len && valid; i++) {
-        valid = valid || *(pk_8 + i) != 0;
+        valid = valid || *(sign_8 + i) != 0;
     }
 
     return valid;
 }
 
-int poet_register(json_value *json, socket_t *socket) {
+int poet_register(json_value *json, socket_t *socket, poet_context *context) {
+    assert(json != nullptr);
+    assert(socket != nullptr);
+    assert(context != nullptr);
+
     int ret_status = EXIT_SUCCESS;
     char *msg = nullptr;
     void *buff = nullptr;
@@ -93,7 +106,7 @@ int poet_register(json_value *json, socket_t *socket) {
     char *pk_64base = nullptr;
     size_t pk_64base_len = 0;
     json_value *sign_json = nullptr;
-    uint node_id = 0;
+    if (context->node == nullptr) context->node = new node_t();
 
     fprintf(stderr, "Register method is called.\n");
 
@@ -113,12 +126,12 @@ int poet_register(json_value *json, socket_t *socket) {
     }
     sign_64base = sign_json->u.string.ptr;
 
-    if (check_public_key_and_signature_registration(std::string(pk_64base), std::string(sign_64base))) {
+    if (check_public_key_and_signature_registration(std::string(pk_64base), std::string(sign_64base), context)) {
         pthread_rwlock_wrlock(&current_id_lock);
         pthread_rwlock_wrlock(&public_keys_lock);
 
-        node_id = current_id++;
-        public_keys.insert({std::string(pk_64base), node_id});
+        context->node->node_id = current_id++;
+        public_keys.insert({std::string(pk_64base), context->node->node_id});
 
         pthread_rwlock_unlock(&public_keys_lock);
         pthread_rwlock_unlock(&current_id_lock);
@@ -131,7 +144,8 @@ int poet_register(json_value *json, socket_t *socket) {
     /*****************************/
 
     msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u}})", sgxmax, sgxt_lowerbound, node_id);
+    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u}})", sgxmax,
+            sgxt_lowerbound, context->node->node_id);
     printf("Server is sending sgxmax (%lu) to the node\n", sgxmax);
     socket_send_message(socket, msg, strlen(msg));
     free(msg);
@@ -145,13 +159,19 @@ int poet_register(json_value *json, socket_t *socket) {
     return ret_status;
 }
 
-int poet_remote_attestation(json_value *json, socket_t *socket) {
-    fprintf(stderr, "Remote Attestation method is called\n");
+int poet_remote_attestation(json_value *json, socket_t *socket, poet_context *context) {
+    assert(json != nullptr);
+    assert(socket != nullptr);
+    assert(context != nullptr);
+
+    fprintf(stderr,
+            "Remote Attestation method is called\n");
 
 #ifdef NO_RA
     char *buffer = (char *) malloc(BUFFER_SIZE);
 
-    sprintf(buffer, R"({"status":"success"})");
+    sprintf(buffer,
+            R"({"status":"success"})");
     printf("%s\n", buffer);
     size_t len = strlen(buffer);
     socket_send_message(socket, buffer, len);
@@ -166,34 +186,67 @@ int poet_remote_attestation(json_value *json, socket_t *socket) {
     return 0;
 }
 
-int poet_sgx_time_broadcast(json_value *json, socket_t *socket) {
-    char *msg;
+static int insert_node_into_sgx_table_and_queue(node_t &node) {
+    ERR("Adding node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into SGX table\n", node.node_id,
+           node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+
+    pthread_rwlock_wrlock(&sgx_table_lock);
+    sgx_table.push_back(&node);
+    assert(sgx_table.back() == &node);
+    pthread_rwlock_unlock(&sgx_table_lock);
+
+    queue_push(queue, &node);
+
+    ERR("Inserted node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into the SGX table and Queue\n", node.node_id,
+           node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+
+    return 1;
+}
+
+int poet_sgx_time_broadcast(json_value *json, socket_t *socket, poet_context *context) {
+    assert(json != nullptr);
+    assert(socket != nullptr);
+    assert(context != nullptr);
+
+    char *msg = nullptr;
     uint sgxt = 0;
     int valid = 1;
 
-//    // receive msg from node
-//    size_t len;
-//    socket_get_message(socket, (void **) &msg, &len);
-//    json = json_parse(msg, len);
-
-    json_value * json_sgxt = find_value(json, "sgxt");
-    if (json_sgxt == nullptr) {
+    json_value *json_sgxt = find_value(json, "sgxt");
+    if (json_sgxt == nullptr || json_sgxt->type != json_integer) {
         valid = 0;
-        goto error;
     }
-    sgxt = json_sgxt->u.integer;
-    printf("SGXt is received and checking the validity.\n");
 
-    error:
+    if (valid) {
+        sgxt = json_sgxt->u.integer;
+        printf("SGXt is received and checking the validity.\n");
+    }
 
     valid = valid && (sgxt_lowerbound <= sgxt && sgxt <= sgxmax);
     printf("SGXt is%s valid: %s (%u)\n", (valid ? "" : " not"), (valid ? "true" : "false"), sgxt);
 
-    msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"%s"})", (valid ? "success" : "failure") );
-    socket_send_message(socket, msg, strlen(msg));
+    if (valid) {
+        node_t &node = *(context->node);
+        node.arrival_time = time(nullptr) - current_time;
+        node.n_leadership = 0;
+        node.sgx_time = sgxt;
+        node.time_left = sgxt;
+        valid = insert_node_into_sgx_table_and_queue(node);
+        printf("Returned from function\n");
+    }
 
-    return valid;
+    msg = (char *) malloc(BUFFER_SIZE);
+    sprintf(msg, R"({"status":"%s"})", (valid ? "success" : "failure"));
+    socket_send_message(socket, msg, strlen(msg));
+    free(msg);
+    msg = nullptr;
+
+    if (!valid) {
+        fprintf(stderr, "Something happened, closing connection ... \n");
+        socket_close(socket);
+    }
+
+    return valid == 0;
 }
 
 struct function_handle functions[] = {

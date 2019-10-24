@@ -18,7 +18,7 @@
 #endif
 
 #include "queue_t.h"
-#include "poet_node_t.h"
+#include "general_structs.h"
 
 #ifndef max
 #define max(a,b) \

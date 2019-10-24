@@ -113,7 +113,7 @@ static sgx_errlist_t sgx_errlist[] = {
 };
 
 /* Check error conditions for loading enclave */
-static void print_error_message(sgx_status_t ret) {
+void sgx_print_error_message(sgx_status_t ret) {
     size_t idx = 0;
     size_t ttl = sizeof sgx_errlist / sizeof sgx_errlist[0];
 
@@ -178,7 +178,7 @@ int initialize_enclave(sgx_enclave_id_t *eid) {
     /* Debug Support: set 2nd parameter to 1 */
     ret = sgx_create_enclave(ENCLAVE_FILENAME, SGX_DEBUG_FLAG, &token, &updated, eid, NULL);
     if (ret != SGX_SUCCESS) {
-        print_error_message(ret);
+        sgx_print_error_message(ret);
         if (fp != NULL) fclose(fp);
         return -1;
     }
