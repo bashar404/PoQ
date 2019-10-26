@@ -27,6 +27,20 @@ extern "C" {
 #define UPPERCASE(x) ((x) & ((unsigned char)0xEF))
 #define LOWERCASE(x) ((x) | ((unsigned char)0x10))
 
+void free_poet_context(struct poet_context *context) {
+    assert(context != NULL);
+
+    if (context->public_key != NULL) {
+        free(context->public_key);
+        context->public_key = NULL;
+    }
+
+    if (context->signature != NULL) {
+        free(context->signature);
+        context->signature = NULL;
+    }
+}
+
 char *encode_hex(void *buffer, size_t buffer_len) {
     size_t wbuffer_len = buffer_len * 2 + 10;
     char *wbuffer = malloc(wbuffer_len);

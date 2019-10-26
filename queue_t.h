@@ -42,6 +42,7 @@ void queue_pop(queue_t *q);
 void queue_push(queue_t *q, void *d);
 void queue_print(queue_t *q);
 void queue_print_func(queue_t *q, void (*)(void *));
+void queue_print_func_dump(queue_t *q, void (*)(void *, void *), void *);
 size_t queue_size(queue_t *q);
 void queue_destructor(queue_t *q, int deallocate);
 

@@ -24,6 +24,15 @@ struct socket_t {
     int protocol;
     int opt;
     int is_closed;
+    int max_connections;
+
+    struct {
+        int is_parent;
+        union {
+            fd_set set;
+            struct socket_t *parent;
+        } data;
+    } fd_set;
 };
 
 typedef struct socket_t socket_t;
@@ -33,6 +42,8 @@ socket_t *socket_constructor(int domain, int type, int protocol, const char *ip,
 int socket_bind(socket_t *soc);
 
 int socket_listen(socket_t *soc, int max_connections);
+
+socket_t *socket_select(socket_t *soc);
 
 socket_t *socket_accept(socket_t *soc);
 

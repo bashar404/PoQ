@@ -9,16 +9,18 @@ extern "C" {
 #include <assert.h>
 #include <stdlib.h>
 #include <math.h>
+#include <fcntl.h>
 
 #ifdef _WIN32
 #include <Windows.h>
 #else
 
 #include <unistd.h>
+#include <errno.h>
 
 #endif
 
-#ifndef NDEBUG
+#ifdef DEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
 #define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
 #else
@@ -38,7 +40,9 @@ extern "C" {
 
 #endif
 
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 1024*8
+#define RETRIES_THRESHOLD 10
+#define ENDING_CHARACTER '\0'
 
 #include "socket_t.h"
 #include "queue_t.h"
@@ -71,6 +75,9 @@ socket_t *socket_constructor(int domain, int type, int protocol, const char *ip,
     }
 
     s->addrlen = sizeof(*address);
+    s->fd_set.is_parent = 1;
+    FD_ZERO(&s->fd_set.data.set);
+    FD_SET(s->socket_descriptor, &s->fd_set.data.set);
 
     return s;
 
@@ -99,13 +106,48 @@ int socket_listen(socket_t *soc, int max_connections) {
     assert(max_connections > 0);
     assert(soc != NULL);
 
+    max_connections = max(0, min(max_connections, FD_SETSIZE));
+
     int ret;
     if ((ret = listen(soc->socket_descriptor, max_connections)) < 0) goto error;
+    soc->max_connections = max_connections;
+
     return ret;
 
     error:
     perror("socket listen");
     return -1;
+}
+
+static socket_t *get_parent(socket_t *soc) {
+    if (soc == NULL) return NULL;
+    if (soc->fd_set.is_parent == 0) {
+        return get_parent(soc->fd_set.data.parent);
+    }
+
+    return soc;
+}
+
+socket_t *socket_select(socket_t *soc) {
+    assert(soc != NULL);
+    socket_t *parent = get_parent(soc);
+    assert(parent != NULL);
+    struct timeval val = {5, 0};
+    if (select(parent->socket_descriptor+1, &parent->fd_set.data.set, NULL, NULL, &val) < 0) {
+        perror("select");
+        exit(EXIT_FAILURE);
+    }
+
+    if (FD_ISSET(parent->socket_descriptor, &parent->fd_set.data.set)) {
+        return socket_accept(parent);
+    }
+
+    return NULL;
+//    else {
+//        fprintf(stderr, "If this reached this point then something is wrong with select\n");
+//        assert(0);
+//        exit(EXIT_FAILURE);
+//    }
 }
 
 socket_t *socket_accept(socket_t *soc) {
@@ -120,6 +162,11 @@ socket_t *socket_accept(socket_t *soc) {
     if (new_socket == NULL) goto error;
     memcpy(new_socket, soc, sizeof(socket_t));
     new_socket->socket_descriptor = new_socket_fd;
+    new_socket->fd_set.is_parent = 0;
+    new_socket->fd_set.data.parent = soc;
+
+    socket_t *parent = get_parent(soc);
+    FD_SET(new_socket->socket_descriptor, &parent->fd_set.data.set);
 
     return new_socket;
     error:
@@ -147,7 +194,15 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
-    int valread = recv(soc->socket_descriptor, buffer, buffer_len, 0);
+    int valread;
+    again:
+    valread = recv(soc->socket_descriptor, buffer, buffer_len, MSG_DONTWAIT);
+
+    if (valread < 0) {
+        if (errno == EINTR || errno == EAGAIN) goto again;
+        perror("socket recv");
+        fprintf(stderr, "valread: %d\n", valread);
+    }
 
     return valread;
 }
@@ -160,7 +215,7 @@ char *concat_buffers(queue_t *queue) {
         perror("malloc");
         goto error;
     }
-    memset(buffer, 0, expected_size);
+    memset(buffer, ENDING_CHARACTER, expected_size);
 
     unsigned char c;
     size_t pos = 0;
@@ -198,6 +253,9 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
 
     size_t current_size = 0;
     size_t received;
+    uint retries;
+    int errsv;
+
     int finished = 0;
     do {
         char *current_buffer = malloc(BUFFER_SIZE);
@@ -205,20 +263,29 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
             perror("malloc");
             goto error;
         }
-        memset(current_buffer, 0, BUFFER_SIZE);
+        memset(current_buffer, ENDING_CHARACTER, BUFFER_SIZE);
         queue_push(buffer_queue, current_buffer);
 
+        retries = 0;
         retry:
         received = socket_recv(soc, current_buffer, BUFFER_SIZE);
+        errsv = errno;
         if (received < 0) {
             fprintf(stderr, "Error receiving part of the buffer, retrying...\n");
-            goto retry;
+            retries++;
+            if (retries < RETRIES_THRESHOLD && errsv == EAGAIN) {
+                goto retry;
+            } else {
+                errno = errsv;
+                perror("socket get message -> retry");
+                goto error;
+            }
         } else if (received == 0) {
-            fprintf(stderr, "Error receiving part of the buffer, seems that the connection is closed.\n");
+            fprintf(stderr, "Error, seems that the connection is closed.\n");
             goto error;
         }
 
-        if (current_buffer[BUFFER_SIZE - 1] == 0) { /* The message have been all received */
+        if (current_buffer[BUFFER_SIZE - 1] == ENDING_CHARACTER) { /* The message have been all received */
             received = strlen(current_buffer);
             finished = 1;
         }
@@ -233,6 +300,12 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
 
     error:
     fprintf(stderr, "Fatal error, can not proceed with receiving message\n");
+    if (*buffer != NULL) {
+        free(*buffer);
+    }
+    *buffer = NULL;
+    *buff_size = 0;
+    current_size = 0;
 
     terminate:
     queue_destructor(buffer_queue, 1);
@@ -244,7 +317,18 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
-    return send(soc->socket_descriptor, buffer, buffer_len, 0);
+    int val, errsv;
+    again:
+    val = send(soc->socket_descriptor, buffer, buffer_len, MSG_NOSIGNAL | MSG_DONTWAIT);
+    errsv = errno;
+
+    if (val <= 0) {
+        if (errno == EINTR || errno == EAGAIN) goto again;
+        perror("socket send");
+    }
+
+    errno = errsv;
+    return val;
 }
 
 int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
@@ -253,27 +337,43 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     assert(buffer_len > 0);
 
     int sent, total_sent = 0;
+    int retries;
+    int errsv;
     do {
+        retries = 0;
+
         retry:
-        sent = socket_send(soc, buffer + total_sent, buffer_len - total_sent);
+        sent = socket_send(soc, buffer + total_sent, min(buffer_len - total_sent, BUFFER_SIZE));
+        errsv = errno;
         if (sent < 0) {
-            fprintf(stderr, "Error sending part of the buffer, retrying...\n");
-            goto retry;
+            perror("socket send message");
+            retries++;
+            if (retries < RETRIES_THRESHOLD && errsv == EAGAIN) {
+                fprintf(stderr, "Error sending part of the buffer, retrying ...\n");
+                goto retry;
+            } else {
+                fprintf(stderr, "Fatal error sending part of the buffer, aborting ... \n");
+                goto error;
+            }
         } else if (sent == 0) {
             fprintf(stderr, "Error sending part of the buffer, seems that the connection is closed.\n");
             goto error;
         }
         total_sent += sent;
-    } while (total_sent < buffer_len);
+    } while (total_sent < buffer_len && retries < RETRIES_THRESHOLD);
 
-#ifndef NDEBUG
+#ifdef DEBUG
     do {
         const char *emsg = "Buffer sent: [%%.%lus]\n";
-        char msg[BUFFER_SIZE];
-        sprintf(msg, emsg, buffer_len);
-        ERR(msg, buffer);
+        char *msg = malloc(BUFFER_SIZE);
+        if (msg != NULL) {
+            sprintf(msg, emsg, buffer_len);
+            ERR(msg, buffer);
+            free(msg);
+        }
     } while (0);
 #endif
+
     goto terminate;
 
     error:
@@ -288,7 +388,14 @@ void socket_close(socket_t *soc) {
     assert(soc != NULL);
     ERR("closing socket: %d\n", soc->socket_descriptor);
 
-    close(soc->socket_descriptor);
+    if (close(soc->socket_descriptor) == -1) {
+        fprintf(stderr, "Error trying to close socket %d\n", soc->socket_descriptor);
+        perror("socket_close");
+    }
+
+    socket_t *parent = get_parent(soc);
+    FD_CLR(soc->socket_descriptor, &parent->fd_set.data.set);
+
     soc->is_closed = 1;
 }
 

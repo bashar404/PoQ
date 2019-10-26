@@ -146,7 +146,7 @@ void queue_print(queue_t *q) {
     queue_print_func(q, generic_print);
 }
 
-void queue_print_func(queue_t *q, void (*print_func)(void *d)) {
+void queue_print_func(queue_t *q, void (*print_func)(void *)) {
     assert(q != NULL);
     assert(print_func != NULL);
 
@@ -158,6 +158,23 @@ void queue_print_func(queue_t *q, void (*print_func)(void *d)) {
     pthread_rwlock_rdlock(q->lock);
     for (item_t *i = q->head; i != NULL; i = i->next) {
         print_func(i->d);
+    }
+    pthread_rwlock_unlock(q->lock);
+    printf("\n");
+}
+
+void queue_print_func_dump(queue_t *q, void (*print_func)(void *, void *), void *dest) {
+    assert(q != NULL);
+    assert(print_func != NULL);
+
+    if (queue_is_empty(q)) {
+        print_func(NULL, dest);
+        return;
+    }
+
+    pthread_rwlock_rdlock(q->lock);
+    for (item_t *i = q->head; i != NULL; i = i->next) {
+        print_func(i->d, dest);
     }
     pthread_rwlock_unlock(q->lock);
     printf("\n");

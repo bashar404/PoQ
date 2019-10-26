@@ -6,6 +6,15 @@ extern "C" {
 #include <assert.h>
 #include "json_checks.h"
 
+#define BUFFER_SIZE 1024
+
+#ifndef NDEBUG
+#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
+#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
+#else
+#define ERR(...) /**/
+#endif
+
 int check_json_compliance(const char *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
@@ -26,6 +35,15 @@ int check_json_compliance(const char *buffer, size_t buffer_len) {
     is_valid = is_valid && JSON_checker_done(jc);
     if (!is_valid) {
         fprintf(stderr, "JSON_checker_end: syntax error\n");
+//#ifdef DEBUG
+        do {
+            const char *emsg = "JSON with invalid syntax: [%%.%lus]\n";
+            char *msg = malloc(BUFFER_SIZE);
+            sprintf(msg, emsg, buffer_len);
+            printf(msg, buffer);
+            free(msg);
+        } while (0);
+//#endif
     }
 
     return is_valid;

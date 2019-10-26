@@ -41,6 +41,8 @@ struct poet_context {
     signature_t *signature;
 };
 
+void free_poet_context(struct poet_context *);
+
 char *encode_hex(void *d, size_t len);
 
 void *decode_hex(const char *buffer, size_t buffer_len);

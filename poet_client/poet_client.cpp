@@ -57,17 +57,23 @@ void global_variable_destructors() {
 }
 
 static void fill_with_rand(void *input, size_t len) {
-    srand(time(nullptr));
-    auto *ptr = (unsigned char *) input;
-
-    for (int i = 0; i < len; i++) {
-        *(ptr + i) = rand() % 256;
+//    srand(time(nullptr));
+//    auto *ptr = (unsigned char *) input;
+//
+//    for (int i = 0; i < len; i++) {
+//        *(ptr + i) = rand() % 256;
+//    }
+    sgx_status_t ret = ecall_random_bytes(eid, input, len);
+    if (ret != SGX_SUCCESS) {
+        fprintf(stderr, "Something happened with the enclave :c\n");
+        sgx_print_error_message(ret);
+        exit(EXIT_FAILURE);
     }
 }
 
 static int poet_remote_attestation_to_server() {
     printf("Starting remote attestation ...\n");
-    int state = 1;
+    bool state = true;
 #ifdef NO_RA
     char *buffer = (char *) malloc(BUFFER_SZ);
 
@@ -92,7 +98,7 @@ static int poet_remote_attestation_to_server() {
     if (json_status == nullptr || json_status->type != json_string ||
         strcmp(json_status->u.string.ptr, "success") != 0) {
         fprintf(stderr, "Remote attestation was not successful\n");
-        state = 0;
+        state = false;
     } else {
         printf("Remote attestation was successful\n");
     }
@@ -287,7 +293,33 @@ static int convert_json_to_node_t(json_value *root, node_t &node) {
     return state;
 }
 
-static int get_sgx_table() {
+static bool get_sgx_table_from_json(json_value *json) {
+    assert(json != nullptr);
+
+    bool state = true;
+    json_value *json_sgx_table = nullptr;
+
+    json_sgx_table = find_value(json, "sgx_table");
+    if (json_sgx_table == nullptr || json_sgx_table->type != json_array) {
+        state = false;
+    }
+
+    if (state) {
+        sgx_table.clear();
+
+        json_value **json_node = json_sgx_table->u.array.begin();
+        while (state && json_node != json_sgx_table->u.array.end()) {
+            node_t node;
+            state = convert_json_to_node_t(*json_node, node);
+            json_node++;
+            sgx_table.push_back(node);
+        }
+    }
+
+    return state;
+}
+
+static bool get_sgx_table() {
     json_value *json = nullptr;
 
     char *buffer = (char *) malloc(BUFFER_SZ);
@@ -305,30 +337,11 @@ static int get_sgx_table() {
         json_value *json_status = find_value(json, "status");
         if (json_status == nullptr || json_status->type != json_string ||
             strcmp(json_status->u.string.ptr, "success") != 0) {
-            state = 0;
-        }
-    }
-
-    json_value *json_sgx_table = nullptr;
-
-    if (state) {
-        json_sgx_table = find_value(json, "sgx_table");
-        if (json_sgx_table == nullptr || json_sgx_table->type != json_array) {
             state = false;
         }
     }
 
-    if (state) {
-        sgx_table.clear();
-
-        json_value **json_node = json_sgx_table->u.array.begin();
-        while(state && json_node != json_sgx_table->u.array.end()) {
-            node_t node;
-            state = convert_json_to_node_t(*json_node, node);
-            json_node++;
-            sgx_table.push_back(node);
-        }
-    }
+    state = state && get_sgx_table_from_json(json);
 
     if (json != nullptr) {
         json_value_free(json);
@@ -341,7 +354,34 @@ static int get_sgx_table() {
     return state;
 }
 
-static int get_queue() {
+static bool get_queue_from_json(json_value *json) {
+    bool state = true;
+    json_value *json_queue = nullptr;
+
+    json_queue = find_value(json, "queue");
+    if (json_queue == nullptr || json_queue->type != json_array) {
+        state = false;
+    }
+
+    if (state) {
+        /* Empty the queue */
+        queue.clear();
+
+        json_value **json_node = json_queue->u.array.begin();
+        while (state && json_node != json_queue->u.array.end()) {
+            uint nid = 0;
+            json_value *value = find_value(*json_node, "node_id");
+            state = state && value != nullptr && value->type == json_integer;
+            nid = value->u.integer;
+            json_node++;
+            queue.push_back(nid);
+        }
+    }
+
+    return state;
+}
+
+static bool get_queue() {
     json_value *json = nullptr;
 
     char *buffer = (char *) malloc(BUFFER_SZ);
@@ -363,29 +403,43 @@ static int get_queue() {
         }
     }
 
-    json_value *json_queue = nullptr;
+    state = state && get_queue_from_json(json);
 
+    if (json != nullptr) {
+        json_value_free(json);
+    }
+
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    return state;
+}
+
+static bool get_queue_and_sgx_table() {
+    json_value *json = nullptr;
+
+    char *buffer = (char *) malloc(BUFFER_SZ);
+    sprintf(buffer, R"({"method":"get_sgxtable_and_queue", "data": null})");
+    int state = socket_send_message(node_socket, buffer, strlen(buffer));
+    free(buffer);
+    buffer = nullptr;
+
+    size_t len;
+    state = state && socket_get_message(node_socket, (void **) &buffer, &len) > 0;
+
+    state = state && check_json_compliance(buffer, len);
     if (state) {
-        json_queue = find_value(json, "queue");
-        if (json_queue == nullptr || json_queue->type != json_array) {
+        json = json_parse(buffer, len);
+        json_value *json_status = find_value(json, "status");
+        if (json_status == nullptr || json_status->type != json_string ||
+            strcmp(json_status->u.string.ptr, "success") != 0) {
             state = 0;
         }
     }
 
-    if (state) {
-        /* Empty the queue */
-        queue.clear();
-
-        json_value **json_node = json_queue->u.array.begin();
-        while(state && json_node != json_queue->u.array.end()) {
-            uint nid = 0;
-            json_value *value = find_value(*json_node, "node_id");
-            state = value != nullptr && value->type == json_integer;
-            nid = value->u.integer;
-            json_node++;
-            queue.push_back(nid);
-        }
-    }
+    state = state && get_queue_from_json(json);
+    state = state && get_sgx_table_from_json(json);
 
     if (json != nullptr) {
         json_value_free(json);
@@ -418,19 +472,16 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Something failed ...\n");
     }
 
-    state = state && get_sgx_table();
+    state = state && get_queue_and_sgx_table();
     if (state) {
         printf("SGX Table:\n---------------------\n");
-        for(auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
+        for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
             printf("%s\n", node_to_json(*i).c_str());
         }
         printf("---------------------\n");
-    }
 
-    state = state && get_queue();
-    if (state) {
         printf("Queue: ");
-        for(auto i = queue.begin(); i != queue.end(); i++) {
+        for (auto i = queue.begin(); i != queue.end(); i++) {
             printf("[%u]", *i);
         }
         printf("\n");

@@ -15,6 +15,9 @@
 #endif
 
 #define MAX_THREADS 20
+#define MAX_CONNECTIONS MAX_THREADS
+#define THREAD_RETRIES_THRESHOLD 100
+#define THREAD_RETRY_WAIT 5
 #define MAX_NODES 10000
 #define TRUE 1
 #define FALSE 0
@@ -113,7 +116,19 @@ static void global_variables_destruction() {
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
 //    global_variables_destruction();
-    fprintf(stderr, "Caught signal %d\n",signum);
+    fprintf(stderr, "Caught signal %d\n", signum);
+
+    bool queue_lock_locked = pthread_rwlock_tryrdlock(&queue_lock) == 0;
+    if (queue_lock_locked) {
+        pthread_rwlock_unlock(&queue_lock);
+    }
+    printf("queue_lock is locked: %d\n", !queue_lock_locked);
+
+    bool sgx_table_locked = pthread_rwlock_tryrdlock(&sgx_table_lock) == 0;
+    if (sgx_table_locked) {
+        pthread_rwlock_unlock(&sgx_table_lock);
+    }
+    printf("sgx_table_lock is locked: %d\n", !sgx_table_locked);
     exit(SIGINT);
 }
 
@@ -154,27 +169,25 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     struct function_handle *function = nullptr;
     char *func_name = nullptr;
 
-    if (! check_json_compliance(buffer, buffer_len)) {
+    if (!check_json_compliance(buffer, buffer_len)) {
         fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
     json = json_parse(buffer, buffer_len);
 
-    if (! check_message_integrity(json)) {
+    if (!check_message_integrity(json)) {
         fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
-    fprintf(stderr, "JSON message is valid\n");
+    ERR("JSON message is valid\n");
     func_name = find_value(json, "method")->u.string.ptr;
 
     for (struct function_handle *i = functions; i->name != nullptr && function == nullptr; i++) {
         function = strcmp(func_name, i->name) == 0 ? i : nullptr;
     }
     assert(function != nullptr);
-
-    printf("Calling: %s\n", function->name);
 
     ret = function->function(find_value(json, "data"), soc, context);
     goto terminate;
@@ -197,18 +210,24 @@ static void *process_new_node(void *arg) {
 
     char *buffer = nullptr;
     size_t buffer_size = 0;
-    poet_context context{};
+    struct poet_context context{};
 
     int socket_state;
     socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
 
     while (socket_state > 0) {
-        printf("message received from socket %d on thread %p\n: \"%s\"\n",
-               node_socket->socket_descriptor,
-               curr_thread->thread,
-               buffer);
+        ERR("message received from socket %d on thread %p\n: \"%s\"\n",
+            node_socket->socket_descriptor,
+            curr_thread->thread,
+            buffer);
 
         if (!delegate_message(buffer, buffer_size, node_socket, &context)) {
+            fprintf(stderr, "Could not delegate message from socket %d\n", node_socket->socket_descriptor);
+            goto error;
+        }
+
+        if (node_socket->is_closed) {
+            fprintf(stderr, "The socket %d was intentionally closed by server.\n", node_socket->socket_descriptor);
             goto error;
         }
 
@@ -218,20 +237,21 @@ static void *process_new_node(void *arg) {
         socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
     }
 
-    if (socket_state < 0) {
-        fprintf(stderr, "error receiving message from socket %d on thread %p\n",
+    if (socket_state == 0 || node_socket->is_closed) {
+        fprintf(stderr, "Connection was closed in socket %d on thread %p\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread);
     } else {
-        printf("Connection was closed in socket %d on thread %p\n",
-               node_socket->socket_descriptor,
-               curr_thread->thread);
+        fprintf(stderr, "error receiving message from socket %d on thread %p\n",
+                node_socket->socket_descriptor,
+                curr_thread->thread);
     }
 
     error:
     if (buffer != nullptr) {
         free(buffer);
     }
+    free_poet_context(&context);
     socket_destructor(node_socket);
     queue_push(threads_queue, curr_thread->thread);
     free(curr_thread);
@@ -254,23 +274,34 @@ int main(int argc, char *argv[]) {
 
     ERR("queue: %p | server_socket: %p\n", queue, server_socket);
 
-    if (socket_listen(server_socket, MAX_THREADS) != FALSE) {
+    if (socket_listen(server_socket, MAX_CONNECTIONS) != FALSE) {
         goto error;
     }
     printf("Starting to listen\n");
 
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
-        socket_t *new_socket = socket_accept(server_socket);
+        socket_t *new_socket = socket_select(server_socket);
         if (new_socket == nullptr) {
-            fprintf(stderr, "Error accepting socket connection\n");
+            printf(".\n");
             continue;
         }
 
         // FIXME: Figure out a way to eliminate active waiting in here
-        int checking;
+        bool checking;
+        uint retries = 0;
         do {
             checking = queue_is_empty(threads_queue);
-        } while (checking);
+            retries++;
+            if (retries > THREAD_RETRIES_THRESHOLD) {
+                fprintf(stderr, "The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
+                sleep(THREAD_RETRY_WAIT);
+                retries = 0;
+            }
+        } while (checking && received_termination_signal() == FALSE);
+
+        if (received_termination_signal() != FALSE) {
+            break;
+        }
 
         auto *next_thread = (pthread_t *) queue_front(threads_queue);
         queue_pop(threads_queue);
@@ -280,8 +311,8 @@ int main(int argc, char *argv[]) {
 
         int error = pthread_create(next_thread, nullptr, &process_new_node, curr_thread);
         if (error != FALSE) {
-            fprintf(stderr, "A thread could not be created: %p (error code: %d)\n", next_thread, error);
             perror("thread creation");
+            fprintf(stderr, "A thread could not be created: %p (error code: %d)\n", next_thread, error);
             exit(EXIT_FAILURE);
         }
         /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
