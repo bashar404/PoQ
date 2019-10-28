@@ -78,6 +78,7 @@ socket_t *socket_constructor(int domain, int type, int protocol, const char *ip,
     s->fd_set.is_parent = 1;
     FD_ZERO(&s->fd_set.data.set);
     FD_SET(s->socket_descriptor, &s->fd_set.data.set);
+    s->fd_set.close_queue = queue_constructor();
 
     return s;
 
@@ -133,7 +134,18 @@ socket_t *socket_select(socket_t *soc) {
     socket_t *parent = get_parent(soc);
     assert(parent != NULL);
     struct timeval val = {5, 0};
-    if (select(parent->socket_descriptor+1, &parent->fd_set.data.set, NULL, NULL, &val) < 0) {
+
+    queue_t *q = parent->fd_set.close_queue;
+    if (soc->fd_set.is_parent == 1) {
+        while (!queue_is_empty(q)) {
+            int fd = queue_front(q);
+            queue_pop(q);
+            FD_CLR(fd, &parent->fd_set.data.set);
+        }
+    }
+
+    fd_set read_fd_set = parent->fd_set.data.set;
+    if (select(parent->socket_descriptor+1, &read_fd_set, NULL, NULL, &val) < 0) {
         perror("select");
         exit(EXIT_FAILURE);
     }
@@ -394,7 +406,7 @@ void socket_close(socket_t *soc) {
     }
 
     socket_t *parent = get_parent(soc);
-    FD_CLR(soc->socket_descriptor, &parent->fd_set.data.set);
+    queue_push(parent->fd_set.close_queue, (void *) soc->socket_descriptor);
 
     soc->is_closed = 1;
 }
@@ -405,6 +417,11 @@ void socket_destructor(socket_t *soc) {
     if (!soc->is_closed) {
         socket_close(soc);
     }
+
+    if (soc->fd_set.is_parent == 1) {
+        queue_destructor(soc->fd_set.close_queue, 0);
+    }
+
     free(soc);
 }
 

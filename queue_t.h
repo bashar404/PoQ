@@ -46,8 +46,8 @@ void queue_print_func_dump(queue_t *q, void (*)(void *, void *), void *);
 size_t queue_size(queue_t *q);
 void queue_destructor(queue_t *q, int deallocate);
 
-#endif
-
 #ifdef __cplusplus
 }
+#endif
+
 #endif

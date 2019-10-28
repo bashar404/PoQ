@@ -8,6 +8,7 @@ extern "C" {
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <netinet/in.h>
+#include "queue_t.h"
 
 #define STR1(x)  #x
 #define STR(x)  STR1(x)
@@ -32,6 +33,7 @@ struct socket_t {
             fd_set set;
             struct socket_t *parent;
         } data;
+        queue_t *close_queue;
     } fd_set;
 };
 

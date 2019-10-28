@@ -193,7 +193,7 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     goto terminate;
 
     error:
-    fprintf(stderr, "method delegation finished with failure\n");
+    fprintf(stderr, "method delegation for function '%10s...' finished with failure\n", func_name);
     ret = false;
 
     terminate:
