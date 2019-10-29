@@ -73,6 +73,7 @@ uint current_id = 0;
 
 size_t sgxt_lowerbound;
 size_t sgxmax;
+uint n_tiers;
 
 /********** PoET variables END **********/
 
@@ -258,6 +259,27 @@ static void *process_new_node(void *arg) {
     pthread_exit(nullptr);
 }
 
+void set_global_constants() {
+    printf("Enter SGXt lowerbound: ");
+    scanf("%lu", &sgxt_lowerbound);
+
+    printf("Enter SGXt upperbound: ");
+    scanf("%lu", &sgxmax);
+
+    printf("Enter number of tiers: ");
+    scanf("%u", &n_tiers);
+
+    if (sgxt_lowerbound >= sgxmax || sgxt_lowerbound == 0 || sgxmax == 0) {
+        fprintf(stderr, "invalid sgxt lowerbound and upperbound\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (n_tiers == 0) {
+        fprintf(stderr, "invalid number of tiers\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char *argv[]) {
     // TODO: receive command line arguments for variable initialization
 
@@ -265,11 +287,7 @@ int main(int argc, char *argv[]) {
 
     global_variables_initialization();
 
-    printf("Enter SGXt lowerbound: ");
-    scanf("%lu", &sgxt_lowerbound);
-
-    printf("Enter SGXt upperbound: ");
-    scanf("%lu", &sgxmax);
+    set_global_constants();
 
     ERR("queue: %p | server_socket: %p\n", queue, server_socket);
 

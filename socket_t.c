@@ -22,9 +22,10 @@ extern "C" {
 
 #ifdef DEBUG
 #define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
-#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
+#define ERRR(...) do {fprintf(stderr, "[%d] ", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
 #else
 #define ERR(...) /**/
+#define ERRR(...) /**/
 #endif
 
 #ifndef max
@@ -155,11 +156,6 @@ socket_t *socket_select(socket_t *soc) {
     }
 
     return NULL;
-//    else {
-//        fprintf(stderr, "If this reached this point then something is wrong with select\n");
-//        assert(0);
-//        exit(EXIT_FAILURE);
-//    }
 }
 
 socket_t *socket_accept(socket_t *soc) {
@@ -347,6 +343,8 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
+
+    ERRR("Message to be sent: [%.*s] on socket %d\n", buffer_len, buffer, soc->socket_descriptor);
 
     int sent, total_sent = 0;
     int retries;

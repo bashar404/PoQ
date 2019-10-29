@@ -6,8 +6,10 @@ extern "C" {
 
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 
 #include "queue_t.h"
+#include "general_structs.h"
 
 // BFS
 json_value *find_value(json_value *u, const char *name) {
@@ -51,6 +53,17 @@ json_value *find_value(json_value *u, const char *name) {
     queue_destructor(queue, 0);
 
     return r;
+}
+
+int calc_tier_number(node_t *node, uint total_tiers, uint sgx_max) {
+    assert(node != NULL);
+
+    /* Since its treated as an index, it is reduced by 1 */
+    int tier;
+    tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;
+    assert(0 <= tier && tier < total_tiers);
+
+    return tier;
 }
 
 #ifdef __cplusplus

@@ -29,6 +29,7 @@ pthread_rwlock_t current_id_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 extern size_t sgxmax;
 extern size_t sgxt_lowerbound;
+extern uint n_tiers;
 
 std::map<std::string, uint> public_keys;
 pthread_rwlock_t public_keys_lock = PTHREAD_RWLOCK_INITIALIZER;
@@ -120,7 +121,7 @@ int poet_register(json_value *json, socket_t *socket, poet_context *context) {
     json_value *sign_json = nullptr;
     if (context->node == nullptr) context->node = (node_t *) malloc(sizeof(node_t));
 
-    ERR(stderr, "Register method is called.\n");
+    ERR("Register method is called.\n");
 
     /**************************************/
 
@@ -228,6 +229,14 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
     return state;
 }
 
+static std::string get_arrival_times() {
+    return "[]"; // TODO complete
+}
+
+static std::string get_quantum_times() {
+    return "[]"; // TODO complete
+}
+
 int poet_sgx_time_broadcast(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
@@ -259,8 +268,25 @@ int poet_sgx_time_broadcast(json_value *json, socket_t *socket, poet_context *co
         state = insert_node_into_sgx_table_and_queue(node);
     }
 
-    msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"%s"})", (state ? "success" : "failure"));
+    if (state) {
+        node_t &node = *(context->node);
+        std::string arrival_times = get_arrival_times();
+        std::string quantum_times = get_quantum_times();
+
+        msg = (char *) malloc(BUFFER_SIZE + arrival_times.length() + quantum_times.length());
+        state = msg != nullptr;
+        if (state) {
+            sprintf(msg,
+                    R"({"status":"success", "data": {"n_nodes": %u, "n_tiers": %u, "arrival_times": %s, "quantum_times": %s}})",
+                    node.node_id + 1, n_tiers, arrival_times.c_str(), quantum_times.c_str()); // TODO: complete
+        }
+    }
+
+    if (!state) {
+        msg = (char *) malloc(BUFFER_SIZE);
+        sprintf(msg, R"({"status":"failure"})");
+    }
+
     socket_send_message(socket, msg, strlen(msg));
     free(msg);
     msg = nullptr;
@@ -462,7 +488,7 @@ int poet_close_connection(json_value *json, socket_t *socket, poet_context *cont
 
     bool state = true;
 
-    char *buffer = (char  *) malloc(BUFFER_SIZE);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     state = buffer != nullptr;
     if (state) {
         sprintf(buffer, R"({"status":"success"})");

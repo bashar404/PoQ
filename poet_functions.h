@@ -10,6 +10,8 @@ extern "C" {
 /* Should return NULL if not found */
 json_value *find_value(json_value *u, const char *name);
 
+int calc_tier_number(node_t *node);
+
 #ifdef __cplusplus
 };
 #endif
