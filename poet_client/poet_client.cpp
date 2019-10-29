@@ -370,11 +370,16 @@ static bool get_queue_from_json(json_value *json) {
         json_value **json_node = json_queue->u.array.begin();
         while (state && json_node != json_queue->u.array.end()) {
             uint nid = 0;
-            json_value *value = find_value(*json_node, "node_id");
+//            json_value *value = find_value(*json_node, "node_id");
+            json_value *value = *json_node;
             state = state && value != nullptr && value->type == json_integer;
             nid = value->u.integer;
             json_node++;
             queue.push_back(nid);
+        }
+
+        if (!state) {
+            fprintf(stderr, "Failed to get queue correctly\n");
         }
     }
 
@@ -452,6 +457,29 @@ static bool get_queue_and_sgx_table() {
     return state;
 }
 
+static bool server_close_connection() {
+    char *buffer = (char *) malloc(BUFFER_SZ);
+    sprintf(buffer, R"({"method":"close_connection", "data": null})");
+    int state = socket_send_message(node_socket, buffer, strlen(buffer));
+    free(buffer);
+    buffer = nullptr;
+
+    size_t len;
+    state = socket_get_message(node_socket, (void **) &buffer, &len) > 0;
+    state = state && check_json_compliance(buffer, len);
+    if (state) {
+        json_value *json = json_parse(buffer, len);
+        json_value *status = find_value(json, "status");
+        if (status != nullptr && status->type == json_string) {
+            state = strcmp(status->u.string.ptr, "success") == 0;
+        }
+
+        json_value_free(json);
+    }
+
+    return state;
+}
+
 int main(int argc, char *argv[]) {
     // TODO: receive parameters by command line
 
@@ -486,6 +514,8 @@ int main(int argc, char *argv[]) {
         }
         printf("\n");
     }
+
+    state = state && server_close_connection();
 
 //    printf("Enter character to exit (%lu).\n", eid);
 //    getchar();

@@ -14,7 +14,11 @@ queue_t *queue_constructor() {
     memset(q, 0, sizeof(queue_t));
 
     q->lock = malloc(sizeof(pthread_rwlock_t));
-    if (q->lock == NULL) goto error;
+    if (q->lock == NULL){
+        perror("queue constructor malloc");
+        goto error;
+    }
+
     memset(q->lock, 0, sizeof(pthread_rwlock_t));
     if (pthread_rwlock_init(q->lock, NULL) != 0) {
         perror("queue_lock init");
@@ -24,7 +28,6 @@ queue_t *queue_constructor() {
     return q;
 
     error:
-    fprintf(stderr, "Could not allocate memory for queue\n");
     if (q != NULL && q->lock != NULL) free(q->lock);
     if (q != NULL) free(q);
     return NULL;
@@ -160,7 +163,6 @@ void queue_print_func(queue_t *q, void (*print_func)(void *)) {
         print_func(i->d);
     }
     pthread_rwlock_unlock(q->lock);
-    printf("\n");
 }
 
 void queue_print_func_dump(queue_t *q, void (*print_func)(void *, void *), void *dest) {
@@ -177,7 +179,6 @@ void queue_print_func_dump(queue_t *q, void (*print_func)(void *, void *), void 
         print_func(i->d, dest);
     }
     pthread_rwlock_unlock(q->lock);
-    printf("\n");
 }
 
 size_t queue_size(queue_t *q) {

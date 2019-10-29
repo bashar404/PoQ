@@ -17,7 +17,7 @@
 #define MAX_THREADS 20
 #define MAX_CONNECTIONS MAX_THREADS
 #define THREAD_RETRIES_THRESHOLD 100
-#define THREAD_RETRY_WAIT 5
+#define THREAD_RETRY_WAIT 2
 #define MAX_NODES 10000
 #define TRUE 1
 #define FALSE 0
@@ -89,7 +89,6 @@ static void global_variables_initialization() {
     }
 
     if (socket_bind(server_socket) != FALSE) {
-        perror("socket bind");
         goto error;
     }
 
@@ -227,7 +226,7 @@ static void *process_new_node(void *arg) {
         }
 
         if (node_socket->is_closed) {
-            fprintf(stderr, "The socket %d was intentionally closed by server.\n", node_socket->socket_descriptor);
+            ERR("The socket %d was intentionally closed by server.\n", node_socket->socket_descriptor);
             goto error;
         }
 
@@ -282,7 +281,7 @@ int main(int argc, char *argv[]) {
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_select(server_socket);
         if (new_socket == nullptr) {
-            printf(".\n");
+            printf(".");
             continue;
         }
 

@@ -213,7 +213,7 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
     if (valread < 0) {
         if (errno == EINTR || errno == EAGAIN) goto again;
         perror("socket recv");
-        fprintf(stderr, "valread: %d\n", valread);
+        ERR( "valread: %d\n", valread);
     }
 
     return valread;
@@ -400,9 +400,13 @@ void socket_close(socket_t *soc) {
     assert(soc != NULL);
     ERR("closing socket: %d\n", soc->socket_descriptor);
 
+    if (soc->is_closed) {
+        return;
+    }
+
     if (close(soc->socket_descriptor) == -1) {
-        fprintf(stderr, "Error trying to close socket %d\n", soc->socket_descriptor);
         perror("socket_close");
+        fprintf(stderr, "Error trying to close socket %d\n", soc->socket_descriptor);
     }
 
     socket_t *parent = get_parent(soc);

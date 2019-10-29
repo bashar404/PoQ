@@ -347,6 +347,8 @@ static std::string node_to_json(const node_t &node) { // move to general methods
 }
 
 static void print_queue_value_into_buffer(void *d, void *string_ptr) {
+    assert(string_ptr != nullptr);
+
     std::string &queue_str = *((std::string *) string_ptr);
 
     if (d == nullptr) {
@@ -360,7 +362,7 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
     char *buffer = (char *) malloc(BUFFER_SIZE);
     valid = buffer != nullptr;
     if (valid) {
-        sprintf(buffer, R"({"node_id": %u},)", node.node_id);
+        sprintf(buffer, R"(%u,)", node.node_id);
         queue_str.append(buffer);
         free(buffer);
     }
@@ -458,7 +460,22 @@ int poet_close_connection(json_value *json, socket_t *socket, poet_context *cont
     assert(socket != nullptr);
     assert(context != nullptr);
 
+    bool state = true;
 
+    char *buffer = (char  *) malloc(BUFFER_SIZE);
+    state = buffer != nullptr;
+    if (state) {
+        sprintf(buffer, R"({"status":"success"})");
+        state = socket_send_message(socket, buffer, strlen(buffer)) > 0;
+    }
+
+    socket_close(socket);
+
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    return state;
 }
 
 struct function_handle functions[] = {
@@ -468,5 +485,6 @@ struct function_handle functions[] = {
         FUNC_PAIR(get_sgxtable),
         FUNC_PAIR(get_queue),
         FUNC_PAIR(get_sgxtable_and_queue),
+        FUNC_PAIR(close_connection),
         {nullptr, nullptr} // to indicate end
 };
