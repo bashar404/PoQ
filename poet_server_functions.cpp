@@ -14,7 +14,6 @@
 #define POET_PREFIX(X) poet_ ## X
 #define FUNC_PAIR(NAME)  { #NAME, POET_PREFIX(NAME) }
 
-#define BUFFER_SIZE 2048
 const struct timespec LOCK_TIMEOUT = {5, 0};
 
 extern queue_t *queue;
@@ -298,11 +297,9 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
 static std::string get_sgx_table_str(bool lock = true) {
     std::string sgx_table_str = "[";
 
-    char *buffer = (char *) malloc(BUFFER_SIZE);
+    bool state = true;
 
-    bool state = buffer != nullptr;
-
-    if (state && lock) {
+    if (lock) {
         state = pthread_rwlock_timedrdlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
         if (!state) {
             perror("get_sgx_table_str");
@@ -311,18 +308,12 @@ static std::string get_sgx_table_str(bool lock = true) {
 
     if (state) {
         for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
-            const node_t *node = *i;
-            sprintf(buffer,
-                    R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u},)",
-                    node->node_id,
-                    node->sgx_time, node->arrival_time, node->time_left, node->n_leadership);
-            sgx_table_str.append(buffer);
+            const char *json = node_t_to_json(*i);
+            sgx_table_str.append(json);
+            sgx_table_str.append(",");
+            free((void *) json);
         }
         if (lock) pthread_rwlock_unlock(&sgx_table_lock);
-    }
-
-    if (buffer != nullptr) {
-        free(buffer);
     }
 
     if (sgx_table_str.back() == ',') sgx_table_str.pop_back(); // delete the trailing comma if present
@@ -364,12 +355,9 @@ int POET_PREFIX(get_sgxtable)(json_value *json, socket_t *socket, poet_context *
 }
 
 static std::string node_to_json(const node_t &node) { // move to general methods
-    char *buffer = (char *) malloc(BUFFER_SIZE);
-    if (buffer != nullptr)
-        sprintf(buffer, R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u})",
-                node.node_id, node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
-    std::string s(buffer);
-    free(buffer);
+    const char *json = node_t_to_json(&node);
+    std::string s(json);
+    free((void *) json);
     return s;
 }
 

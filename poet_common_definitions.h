@@ -26,4 +26,6 @@
 # endif
 #endif
 
+#define BUFFER_SIZE 1024
+
 #endif //POET_CODE_POET_COMMON_DEFINITIONS_H

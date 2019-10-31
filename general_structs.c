@@ -10,22 +10,68 @@ extern "C" {
 #include "base64.c"
 
 #include "general_structs.h"
-
-#ifndef max
-#define max(a, b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
-
-#define min(a, b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a < _b ? _a : _b; })
-
-#endif
+#include "poet_shared_functions.h"
+#include "poet_common_definitions.h"
 
 #define UPPERCASE(x) ((x) & ((unsigned char)0xEF))
 #define LOWERCASE(x) ((x) | ((unsigned char)0x10))
+
+const char *node_t_to_json(const node_t *node) {
+    assert(node != NULL);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
+    char *wbuffer = NULL;
+    if (buffer != NULL) {
+        sprintf(buffer,
+                "{\"node_id\": %u, \"sgx_time\": %u, \"arrival_time\": %u, \"time_left\": %u, \"n_leadership\": %u}",
+                node->node_id, node->sgx_time, node->arrival_time, node->time_left, node->n_leadership);
+        size_t len = strlen(buffer);
+        wbuffer = malloc(len+1);
+        if (wbuffer != NULL) {
+            strcpy(wbuffer, buffer);
+            free(buffer);
+        } else {
+            wbuffer = buffer;
+            perror("node_t_to_json -> memory efficiency");
+            ERR("for some reason could not allocate more memory\n");
+        }
+    } else {
+        perror("node_t_to_json");
+    }
+
+    return wbuffer;
+}
+
+int json_to_node_t(const json_value *json, node_t *node) {
+    assert(json != NULL);
+    assert(json->type == json_object);
+
+    json_value *root = (json_value *) json;
+
+    int state = 1;
+    json_value *value = NULL;
+
+    value = find_value(root, "node_id");
+    state = state && value != NULL;
+    if (state) node->node_id = value->u.integer;
+
+    value = state ? find_value(root, "sgx_time") : NULL;
+    state = state && value != NULL;
+    if (state) node->sgx_time = value->u.integer;
+
+    value = state ? find_value(root, "n_leadership") : NULL;
+    state = state && value != NULL;
+    if (state) node->n_leadership = value->u.integer;
+
+    value = state ? find_value(root, "time_left") : NULL;
+    state = state && value != NULL;
+    if (state) node->time_left = value->u.integer;
+
+    value = state ? find_value(root, "arrival_time") : NULL;
+    state = state && value != NULL;
+    if (state) node->arrival_time = value->u.integer;
+
+    return state;
+}
 
 void free_poet_context(struct poet_context *context) {
     assert(context != NULL);

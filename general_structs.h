@@ -9,6 +9,7 @@ extern "C" {
 #include <stdint.h>
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
+#include <json-parser/json.h>
 
 #define NUM_TYPE int8_t
 #define PUBLIC_KEY_BITS_SIZE 256
@@ -40,6 +41,10 @@ struct poet_context {
     public_key_t *public_key;
     signature_t *signature;
 };
+
+const char *node_t_to_json(const node_t *);
+
+int json_to_node_t(const json_value *, node_t *);
 
 void free_poet_context(struct poet_context *);
 

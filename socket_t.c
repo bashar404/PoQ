@@ -22,7 +22,6 @@ extern "C" {
 
 #include "poet_common_definitions.h"
 
-#define BUFFER_SIZE 1024*8
 #define RETRIES_THRESHOLD 10
 #define ENDING_CHARACTER '\0'
 

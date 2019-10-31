@@ -64,7 +64,7 @@ void get_input_from_user(int prompt) {
     }
 }
 
-int calc_tier_number(node_t *node) {
+static int calc_tier_number(node_t *node) {
     /* Since its treated as an index, it is reduced by 1 */
     int tier;
     tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;

@@ -14,6 +14,14 @@
 #include <Windows.h>
 #endif
 
+#include "socket_t.h"
+#include "queue_t.h"
+#include "general_structs.h"
+#include "poet_common_definitions.h"
+#include "poet_server_functions.h"
+#include "poet_shared_functions.h"
+#include "json_checks.h"
+
 #define MAX_THREADS 20
 #define MAX_CONNECTIONS MAX_THREADS
 #define THREAD_RETRIES_THRESHOLD 100
@@ -27,14 +35,6 @@
 #define PROTOCOL 0
 #define PORT 9000
 #define SERVER_IP "0.0.0.0"
-#define BUFFER_SZ 1024
-
-#include "socket_t.h"
-#include "queue_t.h"
-#include "general_structs.h"
-#include "poet_server_functions.h"
-#include "poet_shared_functions.h"
-#include "json_checks.h"
 
 struct thread_tuple {
     pthread_t *thread;

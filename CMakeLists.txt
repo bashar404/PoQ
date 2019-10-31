@@ -16,7 +16,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SGX REQUIRED)
 
 add_executable(poet_main
-        POET++.c socket_t.c queue_t.c general_structs.c)
+        POET++.c socket_t.c queue_t.c general_structs.c poet_shared_functions.c)
 target_link_libraries(poet_main m pthread)
 
 # --------------- CLIENT ---------------------

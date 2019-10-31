@@ -25,7 +25,6 @@
 #define PROTOCOL 0
 #define PORT 9000
 #define SERVER_IP "127.0.0.1"
-#define BUFFER_SZ 2048
 
 socket_t *node_socket = nullptr;
 sgx_enclave_id_t eid = 0;
@@ -69,7 +68,7 @@ static int poet_remote_attestation_to_server() {
     printf("Starting remote attestation ...\n");
     bool state = true;
 #ifdef NO_RA
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
 
     sprintf(buffer, R"({"method" : "remote_attestation", "data": null})");
     printf("%s\n", buffer);
@@ -126,7 +125,7 @@ static uint generate_random_sgx_time() {
 }
 
 static int poet_register_to_server() {
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     int state = 1;
     json_value *json = nullptr;
     json_value *json_status = nullptr;
@@ -198,7 +197,7 @@ static int poet_register_to_server() {
         sgxt = generate_random_sgx_time();
         printf("SGXt is generated: %u\n", sgxt);
 
-        buffer = (char *) malloc(BUFFER_SZ);
+        buffer = (char *) malloc(BUFFER_SIZE);
         if (buffer == nullptr) {
             perror("malloc");
             state = 0;
@@ -249,42 +248,10 @@ static int poet_register_to_server() {
 }
 
 static std::string node_to_json(const node_t &node) { // move to general methods
-    char *buffer = (char *) malloc(BUFFER_SZ);
-    sprintf(buffer, R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u})",
-            node.node_id, node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
-    std::string s(buffer);
-    free(buffer);
+    const char *json = node_t_to_json(&node);
+    std::string s(json);
+    free((void *) json);
     return s;
-}
-
-static int convert_json_to_node_t(json_value *root, node_t &node) {
-    assert(root != nullptr);
-    assert(root->type = json_object);
-
-    int state = 1;
-    json_value *value = nullptr;
-
-    value = find_value(root, "node_id");
-    state = state && value != nullptr;
-    if (state) node.node_id = value->u.integer;
-
-    value = state ? find_value(root, "sgx_time") : nullptr;
-    state = state && value != nullptr;
-    if (state) node.sgx_time = value->u.integer;
-
-    value = state ? find_value(root, "n_leadership") : nullptr;
-    state = state && value != nullptr;
-    if (state) node.n_leadership = value->u.integer;
-
-    value = state ? find_value(root, "time_left") : nullptr;
-    state = state && value != nullptr;
-    if (state) node.time_left = value->u.integer;
-
-    value = state ? find_value(root, "arrival_time") : nullptr;
-    state = state && value != nullptr;
-    if (state) node.arrival_time = value->u.integer;
-
-    return state;
 }
 
 static bool get_sgx_table_from_json(json_value *json) {
@@ -304,7 +271,7 @@ static bool get_sgx_table_from_json(json_value *json) {
         json_value **json_node = json_sgx_table->u.array.begin();
         while (state && json_node != json_sgx_table->u.array.end()) {
             node_t node;
-            state = convert_json_to_node_t(*json_node, node);
+            state = json_to_node_t(*json_node, &node);
             json_node++;
             sgx_table.push_back(node);
         }
@@ -316,7 +283,7 @@ static bool get_sgx_table_from_json(json_value *json) {
 static bool get_sgx_table() {
     json_value *json = nullptr;
 
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     sprintf(buffer, R"({"method":"get_sgxtable", "data": null})");
     socket_send_message(node_socket, buffer, strlen(buffer));
     free(buffer);
@@ -383,7 +350,7 @@ static bool get_queue_from_json(json_value *json) {
 static bool get_queue() {
     json_value *json = nullptr;
 
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     sprintf(buffer, R"({"method":"get_queue", "data": null})");
     int state = socket_send_message(node_socket, buffer, strlen(buffer));
     free(buffer);
@@ -418,7 +385,7 @@ static bool get_queue() {
 static bool get_queue_and_sgx_table() {
     json_value *json = nullptr;
 
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     sprintf(buffer, R"({"method":"get_sgxtable_and_queue", "data": null})");
     int state = socket_send_message(node_socket, buffer, strlen(buffer));
     free(buffer);
@@ -452,7 +419,7 @@ static bool get_queue_and_sgx_table() {
 }
 
 static bool server_close_connection() {
-    char *buffer = (char *) malloc(BUFFER_SZ);
+    char *buffer = (char *) malloc(BUFFER_SIZE);
     sprintf(buffer, R"({"method":"close_connection", "data": null})");
     int state = socket_send_message(node_socket, buffer, strlen(buffer));
     free(buffer);

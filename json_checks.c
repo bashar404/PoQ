@@ -7,7 +7,6 @@ extern "C" {
 #include "json_checks.h"
 #include "poet_common_definitions.h"
 
-#define BUFFER_SIZE 1024
 #define JSON_ERROR_LEN 30
 
 int check_json_compliance(const char *buffer, size_t buffer_len) {
