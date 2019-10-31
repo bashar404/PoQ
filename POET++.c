@@ -10,28 +10,10 @@
 #include <time.h>
 #include <assert.h>
 
-#ifndef NDEBUG
-#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
-#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
-#else
-#define ERR(...) /**/
-#endif
+#include "poet_common_definitions.h"
 
 #include "queue_t.h"
 #include "general_structs.h"
-
-#ifndef max
-#define max(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
-
-#define min(a,b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a < _b ? _a : _b; })
-
-#endif
 
 #define MAX_SIZE 10000
 
@@ -310,7 +292,7 @@ int main(int argc, char *argv[]) {
     pause_for_user(promptUser, promptUser);
     queue_destructor(queue, 1);
 
-#ifndef NDEBUG
+#ifdef DEBUG
     /* General invariants after execution */
     for(int i = 0; i < node_count; i++) {
         if (nodes[i].time_left > 0) {

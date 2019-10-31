@@ -1,5 +1,5 @@
 #include "poet_server_functions.h"
-#include "poet_functions.h"
+#include "poet_shared_functions.h"
 #include "general_structs.h"
 #include "queue_t.h"
 #include <cstdio>

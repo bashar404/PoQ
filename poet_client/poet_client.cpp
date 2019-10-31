@@ -7,10 +7,9 @@
 #include <general_structs.h>
 #include <vector>
 #include <string>
-#include <queue>
 
 #include "socket_t.h"
-#include "poet_functions.h"
+#include "poet_shared_functions.h"
 #include "json_checks.h"
 #include "enclave_helper.h"
 
@@ -19,12 +18,7 @@
 #include "sgx_urts.h"
 #include "enclave_u.h"
 
-#ifndef NDEBUG
-#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
-#define ERRR(...) do {fprintf(stderr, "(%d)", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
-#else
-#define ERR(...) /**/
-#endif
+#include "poet_common_definitions.h"
 
 #define DOMAIN AF_INET
 #define TYPE SOCK_STREAM
@@ -110,7 +104,8 @@ static int poet_remote_attestation_to_server() {
 #else
 
     // TODO: Remote attestation
-    assert(false);
+    fprintf(stderr, "Remote attestation still not implemented\n");
+    exit(EXIT_FAILURE);
 
 #endif
 
@@ -209,7 +204,7 @@ static int poet_register_to_server() {
             state = 0;
             goto error;
         }
-        sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt" : %u}})",
+        sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt": %u}})",
                 sgxt); // TODO: should send its identity from the enclave in it
         printf("Sending SGXt (%u) to the server\n", sgxt);
         state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
@@ -256,8 +251,7 @@ static int poet_register_to_server() {
 static std::string node_to_json(const node_t &node) { // move to general methods
     char *buffer = (char *) malloc(BUFFER_SZ);
     sprintf(buffer, R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u})",
-            node.node_id,
-            node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+            node.node_id, node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
     std::string s(buffer);
     free(buffer);
     return s;

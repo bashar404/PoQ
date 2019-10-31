@@ -20,26 +20,7 @@ extern "C" {
 
 #endif
 
-#ifdef DEBUG
-#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
-#define ERRR(...) do {fprintf(stderr, "[%d] ", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
-#else
-#define ERR(...) /**/
-#define ERRR(...) /**/
-#endif
-
-#ifndef max
-#define max(a, b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
-
-#define min(a, b) \
-   ({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a < _b ? _a : _b; })
-
-#endif
+#include "poet_common_definitions.h"
 
 #define BUFFER_SIZE 1024*8
 #define RETRIES_THRESHOLD 10
@@ -344,7 +325,7 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
-    ERRR("Message to be sent: [%.*s] on socket %d\n", buffer_len, buffer, soc->socket_descriptor);
+    ERRR("Message to be sent: [%.*s] on socket %d\n", (int) buffer_len, buffer, soc->socket_descriptor);
 
     int sent, total_sent = 0;
     int retries;
@@ -373,15 +354,10 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     } while (total_sent < buffer_len && retries < RETRIES_THRESHOLD);
 
 #ifdef DEBUG
-    do {
-        const char *emsg = "Buffer sent: [%%.%lus]\n";
-        char *msg = malloc(BUFFER_SIZE);
-        if (msg != NULL) {
-            sprintf(msg, emsg, buffer_len);
-            ERR(msg, buffer);
-            free(msg);
-        }
-    } while (0);
+    ERRR("Message sent: [%.*s] on socket %d\n", total_sent, buffer, soc->socket_descriptor);
+    if (total_sent < buffer_len) {
+        ERRR("WARNING: sent buffer is smaller than intended (%d < %lu)\n", total_sent, buffer_len);
+    }
 #endif
 
     goto terminate;

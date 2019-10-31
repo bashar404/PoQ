@@ -10,14 +10,7 @@ extern "C" {
 #include <string.h>
 #include <assert.h>
 #include <pthread.h>
-
-#ifdef DEBUG
-#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0);
-#define ERRR(...) do {fprintf(stderr, "[%d]", __LINE__); fprintf(stderr, __VA_ARGS__);} while(0);
-#else
-#define ERR(...) /**/
-#define ERRR(...) /**/
-#endif
+#include "poet_common_definitions.h"
 
 struct item {
     void *d;
