@@ -25,7 +25,7 @@ queue_t *queue_constructor() {
         goto error;
     }
 
-    ERR("Created queue %p on thread %lu\n", q, pthread_self());
+    ERR("Created queue %p on thread 0x%lx\n", q, pthread_self());
 
     return q;
 

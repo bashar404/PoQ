@@ -11,7 +11,8 @@
 #include <string>
 #include <vector>
 
-#define FUNC_PAIR(NAME)  { #NAME, poet_ ## NAME }
+#define POET_PREFIX(X) poet_ ## X
+#define FUNC_PAIR(NAME)  { #NAME, POET_PREFIX(NAME) }
 
 #define BUFFER_SIZE 2048
 const struct timespec LOCK_TIMEOUT = {5, 0};
@@ -106,7 +107,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     return valid;
 }
 
-int poet_register(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -180,7 +181,7 @@ int poet_register(json_value *json, socket_t *socket, poet_context *context) {
     return valid;
 }
 
-int poet_remote_attestation(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(remote_attestation)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -237,7 +238,7 @@ static std::string get_quantum_times() {
     return "[]"; // TODO complete
 }
 
-int poet_sgx_time_broadcast(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -330,7 +331,7 @@ static std::string get_sgx_table_str(bool lock = true) {
     return sgx_table_str;
 }
 
-int poet_get_sgxtable(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(get_sgxtable)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -405,7 +406,7 @@ static std::string get_queue_str() {
     return queue_str;
 }
 
-int poet_get_queue(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(get_queue)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -436,7 +437,7 @@ int poet_get_queue(json_value *json, socket_t *socket, poet_context *context) {
     return state;
 }
 
-int poet_get_sgxtable_and_queue(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -481,7 +482,7 @@ int poet_get_sgxtable_and_queue(json_value *json, socket_t *socket, poet_context
     return state;
 }
 
-int poet_close_connection(json_value *json, socket_t *socket, poet_context *context) {
+int POET_PREFIX(close_connection)(json_value *json, socket_t *socket, poet_context *context) {
     assert(json != nullptr);
     assert(socket != nullptr);
     assert(context != nullptr);
@@ -504,7 +505,7 @@ int poet_close_connection(json_value *json, socket_t *socket, poet_context *cont
     return state;
 }
 
-struct function_handle functions[] = {
+struct function_handle poet_functions[] = {
         FUNC_PAIR(register),
         FUNC_PAIR(remote_attestation),
         FUNC_PAIR(sgx_time_broadcast),

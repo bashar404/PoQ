@@ -2,8 +2,10 @@
 #define POET_CODE_POET_COMMON_DEFINITIONS_H
 
 #ifdef DEBUG
-#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
-#define ERRR(...) do {fprintf(stderr, "[%s:%d] ", (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+#include <pthread.h>
+//#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
+#define ERR(...) ERRR(__VA_ARGS__)
+#define ERRR(...) do {fprintf(stderr, "[0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
                       fprintf(stderr, __VA_ARGS__);} while(0)
 #else
 #define ERR(...) /**/

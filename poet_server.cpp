@@ -140,7 +140,7 @@ static bool check_message_integrity(json_value *json) {
     if (valid) {
         char *s = json_method->u.string.ptr;
         int found = 0;
-        for (struct function_handle *i = functions; i->name != nullptr && !found; i++) {
+        for (struct function_handle *i = poet_functions; i->name != nullptr && !found; i++) {
             found = found || strcmp(s, i->name) == 0;
         }
 
@@ -173,7 +173,7 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     ERR("JSON message is valid\n");
     func_name = find_value(json, "method")->u.string.ptr;
 
-    for (struct function_handle *i = functions; i->name != nullptr && function == nullptr; i++) {
+    for (struct function_handle *i = poet_functions; i->name != nullptr && function == nullptr; i++) {
         function = strcmp(func_name, i->name) == 0 ? i : nullptr;
     }
     assert(function != nullptr);
@@ -195,7 +195,7 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
 static void *process_new_node(void *arg) {
     auto *curr_thread = (struct thread_tuple *) arg;
     auto *node_socket = (socket_t *) curr_thread->data;
-    ERR("Processing node in thread: %p(%lu) and socket %3d\n", curr_thread->thread, *(curr_thread->thread), node_socket->socket_descriptor);
+    ERR("Processing node in thread: %p(0x%lx) and socket %3d\n", curr_thread->thread, *(curr_thread->thread), node_socket->socket_descriptor);
 
     char *buffer = nullptr;
     size_t buffer_size = 0;
@@ -205,7 +205,7 @@ static void *process_new_node(void *arg) {
     socket_state = socket_get_message(node_socket, (void **) &buffer, &buffer_size);
 
     while (socket_state > 0) {
-        ERR("message received from socket %d on thread %p(%lu)\n: \"%s\"\n",
+        ERR("message received from socket %d on thread %p(0x%lx)\n: \"%s\"\n",
             node_socket->socket_descriptor,
             curr_thread->thread,
             *(curr_thread->thread),
@@ -228,12 +228,12 @@ static void *process_new_node(void *arg) {
     }
 
     if (socket_state == 0 || node_socket->is_closed) {
-        fprintf(stderr, "Connection was closed in socket %d on thread %p(%lu)\n",
+        fprintf(stderr, "Connection was closed in socket %d on thread %p(0x%lx)\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread,
                 *(curr_thread->thread));
     } else {
-        fprintf(stderr, "error receiving message from socket %d on thread %p(%lu)\n",
+        fprintf(stderr, "error receiving message from socket %d on thread %p(0x%lx)\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread,
                 *(curr_thread->thread));
@@ -321,7 +321,7 @@ int main(int argc, char *argv[]) {
         int error = pthread_create(next_thread, nullptr, &process_new_node, curr_thread);
         if (error != FALSE) {
             perror("thread creation");
-            fprintf(stderr, "A thread could not be created: %p(%lu) (error code: %d)\n", next_thread, *next_thread, error);
+            fprintf(stderr, "A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
             exit(EXIT_FAILURE);
         }
         /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
