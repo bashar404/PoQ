@@ -46,10 +46,11 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
 
     valid = pthread_rwlock_timedrdlock(&public_keys_lock, &LOCK_TIMEOUT) == 0;
     if (valid) {
-        already_registered = public_keys.count(pk_str) > 0; // is not already registered
+        already_registered = public_keys.count(pk_str) > 0;
         if (already_registered) {
             uint node = public_keys[pk_str];
-            fprintf(stderr, "This PK is already registered for node %u\n", node);
+            context->node->node_id = node;
+            ERR("This PK is already registered for node %u\n", node);
         }
         pthread_rwlock_unlock(&public_keys_lock);
     } else {
@@ -59,7 +60,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
         return false;
     }
 
-    context->public_key = (public_key_t *) (malloc(sizeof(public_key_t)));
+    context->public_key = (public_key_t *) malloc(sizeof(public_key_t));
     context->signature = (signature_t *) malloc(sizeof(signature_t));
 
     public_key_t &pk = *(context->public_key);
@@ -91,6 +92,8 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
         }
     }
 
+
+    // Checking validity of PK and Sign
     auto *pk_8 = (uint8_t *) &pk;
     size_t len = sizeof(public_key_t);
     for (int i = 0; i < len && valid; i++) {
@@ -119,7 +122,7 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
     char *pk_64base = nullptr;
     size_t pk_64base_len = 0;
     json_value *sign_json = nullptr;
-    if (context->node == nullptr) context->node = (node_t *) malloc(sizeof(node_t));
+    if (context->node == nullptr) context->node = (node_t *) calloc(1, sizeof(node_t));
 
     ERR("Register method is called.\n");
 
@@ -141,21 +144,15 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
 
     if (check_public_key_and_signature_registration(std::string(pk_64base), std::string(sign_64base), context)) {
         bool locked = true;
-        locked = pthread_rwlock_timedrdlock(&current_id_lock, &LOCK_TIMEOUT) == 0;
+        locked = rwlock_timedrdlocks(&LOCK_TIMEOUT, &current_id_lock, &public_keys_lock);
+//        locked = pthread_rwlock_timedrdlock(&current_id_lock, &LOCK_TIMEOUT) == 0;
         if (locked) {
-            locked = pthread_rwlock_timedrdlock(&public_keys_lock, &LOCK_TIMEOUT) == 0;
-            if (locked) {
-                context->node->node_id = current_id++;
-                public_keys.insert({std::string(pk_64base), context->node->node_id});
-                pthread_rwlock_unlock(&public_keys_lock);
-            } else {
-                perror("poet_register -> public_keys_lock");
-            }
-            pthread_rwlock_unlock(&current_id_lock);
+            context->node->node_id = current_id++;
+            public_keys.insert({std::string(pk_64base), context->node->node_id});
+            rwlock_unlocks(&current_id_lock, &public_keys_lock);
         } else {
-            perror("poet_register -> current_time_lock");
+            perror("poet_register -> locks for current_id_lock and public_key_lock");
         }
-
     } else {
         fprintf(stderr, "The PK or the Signature is not valid, closing connection ...\n");
         valid = false;
