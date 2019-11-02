@@ -15,6 +15,8 @@
 #include "queue_t.h"
 #include "general_structs.h"
 
+#define ffprintf(...) do{ fprintf(out, __VA_ARGS__); printf(__VA_ARGS__); } while(0)
+
 #define MAX_SIZE 10000
 
 /*********************************************************************/
@@ -24,6 +26,8 @@ node_t nodes[MAX_SIZE];
 uint node_count, sgx_max, arrival_time_max, total_tiers, current_time;
 uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
 float sumT[MAX_SIZE];
+
+FILE *out;
 
 queue_t *queue = NULL;
 
@@ -96,7 +100,11 @@ int is_time_left() {
     for (int i = 0; i < node_count; i++) {
         // if any node has remaining time it returns true
         b = b || (nodes[i].time_left > 0);
+        int was_leader = nodes[i].n_leadership;
         nodes[i].n_leadership = (nodes[i].time_left == 0); // FIXME: shouldn't this be incremented by 1?
+        if (!was_leader && nodes[i].n_leadership == 1) {
+            ffprintf("The leader of this pass is [Node%03d]\n", i);
+        }
     }
     return b;
 }
@@ -272,6 +280,8 @@ int main(int argc, char *argv[]) {
 
     queue = queue_constructor();
 
+    out = fopen("out.txt", "w");
+
     int show_user_prompt = argc <= 1; // FIXME: temporary
     get_input_from_user(show_user_prompt);
 
@@ -301,6 +311,8 @@ int main(int argc, char *argv[]) {
         assert(nodes[i].time_left == 0);
     }
 #endif
+
+    fclose(out);
 
     return 0;
 }
