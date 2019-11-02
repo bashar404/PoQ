@@ -18,10 +18,11 @@
 #define ffprintf(...) do{ fprintf(out, __VA_ARGS__); printf(__VA_ARGS__); } while(0)
 
 #define MAX_SIZE 10000
+#define MAX_ITERATIONS 15
 
 /*********************************************************************/
 
-node_t nodes[MAX_SIZE];
+node_t sgx_table[MAX_SIZE];
 
 uint node_count, sgx_max, arrival_time_max, total_tiers, current_time;
 uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
@@ -55,16 +56,16 @@ void get_input_from_user(int prompt) {
     if (prompt) printf("Total number of tiers: ");
     scanf("%d", &total_tiers);
 
-    if (prompt) printf("Arrival maximum time: ");
+    if (prompt) printf("Arrival maximum time for first pass: ");
     scanf("%d", &arrival_time_max);
     for (int i = 0; i < node_count; i++) {
         int b = randint(1, sgx_max);
         int a = randint(0, 10); // FIXME: what is this used for?
 	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
-        nodes[i].arrival_time = at;
-        nodes[i].sgx_time = b;
-        nodes[i].n_leadership = 0;
-        nodes[i].time_left = nodes[i].sgx_time;
+        sgx_table[i].arrival_time = at;
+        sgx_table[i].sgx_time = b;
+        sgx_table[i].n_leadership = 0;
+        sgx_table[i].time_left = sgx_table[i].sgx_time;
     }
 }
 
@@ -73,7 +74,7 @@ static int calc_tier_number(node_t *node) {
     int tier;
     tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;
 
-#ifndef NDEBUG
+#ifdef DEBUG
     if (! (0 <= tier && tier < total_tiers)){
         ERR("0 <= %d < %d\n", tier, total_tiers);
     }
@@ -87,11 +88,11 @@ void print_sgx_table() {
     printf("Pass:\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (int i = 0; i < node_count; i++) {
         printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
-                i,
-                nodes[i].arrival_time,
-                nodes[i].sgx_time,
-                nodes[i].n_leadership,
-                nodes[i].time_left);
+               i,
+               sgx_table[i].arrival_time,
+               sgx_table[i].sgx_time,
+               sgx_table[i].n_leadership,
+               sgx_table[i].time_left);
     }
 }
 
@@ -99,11 +100,16 @@ int is_time_left() {
     int b = 0;
     for (int i = 0; i < node_count; i++) {
         // if any node has remaining time it returns true
-        b = b || (nodes[i].time_left > 0);
-        int was_leader = nodes[i].n_leadership;
-        nodes[i].n_leadership = (nodes[i].time_left == 0); // FIXME: shouldn't this be incremented by 1?
-        if (!was_leader && nodes[i].n_leadership == 1) {
+        b = b || (sgx_table[i].time_left > 0);
+        int previous_leadership = sgx_table[i].n_leadership;
+        sgx_table[i].n_leadership += (sgx_table[i].time_left == 0);
+        if (previous_leadership != sgx_table[i].n_leadership) {
             ffprintf("The leader of this pass is [Node%03d]\n", i);
+            sgx_table[i].time_left = sgx_table[i].sgx_time = randint(1, sgx_max);
+            sgx_table[i].arrival_time = current_time+1;
+            int *nid = malloc(sizeof(int));
+            *nid = i;
+            queue_push(queue, nid);
         }
     }
     return b;
@@ -116,11 +122,11 @@ void calculate_quantum_time() {
     }
 
     for (int i = 0; i < node_count; i++) {
-        if (current_time >= nodes[i].arrival_time) {
-            assert(nodes[i].sgx_time > 0);
-            int temptier = calc_tier_number(&nodes[i]);
+        if (current_time >= sgx_table[i].arrival_time) {
+            assert(sgx_table[i].sgx_time > 0);
+            int temptier = calc_tier_number(&sgx_table[i]);
             tier_active_nodes[temptier] += 1;
-            sumT[temptier] += nodes[i].time_left;
+            sumT[temptier] += sgx_table[i].time_left;
         }
     }
 
@@ -142,7 +148,7 @@ void calculate_quantum_time() {
 
 void check_node_arrive() {
     for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
-        if (nodes[i].arrival_time == current_time) { /*time = 0 already declared*/
+        if (sgx_table[i].arrival_time == current_time) { /*time = 0 already declared*/
             calculate_quantum_time();
             int * i_ptr = malloc(sizeof(int));
             *i_ptr = i;
@@ -155,29 +161,29 @@ void arrange() {
     int current_node;
 
     check_node_arrive();
-    while (is_time_left()) {
+    while (is_time_left() && current_time < MAX_ITERATIONS) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
             check_node_arrive();
-        } else { // some nodes in the queue
+        } else { // some sgx_table in the queue
             current_node = *((int*)queue_front(queue));
             free(queue_front(queue));
             queue_pop(queue);
 
-            int temptier = calc_tier_number(&nodes[current_node]);
+            int temptier = calc_tier_number(&sgx_table[current_node]);
             uint qt = (uint) tier_quantum_time[temptier];
 
-            qt = min(qt, nodes[current_node].time_left);
+            qt = min(qt, sgx_table[current_node].time_left);
 
             for (uint i = qt; i > 0; i--) {
                 nodes_queue[current_time] = current_node;
-                nodes[current_node].time_left--; //reducing the remaining time
+                sgx_table[current_node].time_left--; //reducing the remaining time
                 current_time++;
                 check_node_arrive(); // keeping track if any node joins
             }
 
-            if (nodes[current_node].time_left > 0) { // if nodes has SGX time left, then push to the queue
+            if (sgx_table[current_node].time_left > 0) { // if sgx_table has SGX time left, then push to the queue
                 int* curr_node = malloc(sizeof(int));
                 *curr_node = current_node;
                 queue_push(queue, curr_node);
@@ -197,28 +203,28 @@ void show_overall_queue() {
     printf("\n");
 
     /*********************************/
-
-    printf("Waiting time:\n");
-    printf("------------\n");
-    for (unsigned int i = 0; i < node_count; i++) {
-        printf("WT Node%d: %u\n", i, wait_times[i]);
-    }
+//
+//    printf("Waiting time:\n");
+//    printf("------------\n");
+//    for (unsigned int i = 0; i < node_count; i++) {
+//        printf("WT Node%d: %u\n", i, wait_times[i]);
+//    }
 
     /*********************************/
 
-    float average_wait_time = 0.0f;
-    for (unsigned int i = 0; i < node_count; i++) {
-        average_wait_time = average_wait_time + wait_times[i];
-    }
-    average_wait_time = average_wait_time / node_count;
-    printf("Avg Waiting time: %f\n", average_wait_time);
-    /* Standard Deviation for Waiting taem */
-    float st_deviation = 0.0f;
-    for(int i = 0; i < node_count; i++) {
-        st_deviation += (wait_times[i] - average_wait_time) * (wait_times[i] - average_wait_time);
-    }
-    st_deviation = sqrtf(st_deviation / ((float)node_count - 1));
-    printf("Standard Deviation for Waiting time: %f\n", st_deviation);
+//    float average_wait_time = 0.0f;
+//    for (unsigned int i = 0; i < node_count; i++) {
+//        average_wait_time = average_wait_time + wait_times[i];
+//    }
+//    average_wait_time = average_wait_time / node_count;
+//    printf("Avg Waiting time: %f\n", average_wait_time);
+//    /* Standard Deviation for Waiting taem */
+//    float st_deviation = 0.0f;
+//    for(int i = 0; i < node_count; i++) {
+//        st_deviation += (wait_times[i] - average_wait_time) * (wait_times[i] - average_wait_time);
+//    }
+//    st_deviation = sqrtf(st_deviation / ((float)node_count - 1));
+//    printf("Standard Deviation for Waiting time: %f\n", st_deviation);
 }
 
 void waiting_time() {
@@ -226,7 +232,7 @@ void waiting_time() {
     for (uint i = 0; i < node_count; i++) {
         for (t = current_time - 1; nodes_queue[t] != i; t--);
         release_time = t + 1;
-        wait_times[i] = release_time - nodes[i].arrival_time - nodes[i].sgx_time;
+        wait_times[i] = release_time - sgx_table[i].arrival_time - sgx_table[i].sgx_time;
     }
 }
 
@@ -238,7 +244,7 @@ void average_estimated_time() {
     for (uint i = 0; i < node_count; i++) {
         for (t = current_time - 1; nodes_queue[t] != i; t--); // TODO: this can be improved with a memorization table
         release_time = t + 1;
-        elapsed_time[i] = release_time - nodes[i].arrival_time;
+        elapsed_time[i] = release_time - sgx_table[i].arrival_time;
 
         printf("ET Node%d: %u\n", i, elapsed_time[i]);
         avg_elapsed_time += elapsed_time[i];
@@ -291,7 +297,7 @@ int main(int argc, char *argv[]) {
     arrange();
     waiting_time();
     show_overall_queue();
-    average_estimated_time();
+//    average_estimated_time();
 
 #ifdef __linux__
     int promptUser = 0;
@@ -305,10 +311,10 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG
     /* General invariants after execution */
     for(int i = 0; i < node_count; i++) {
-        if (nodes[i].time_left > 0) {
-            ERR("Node %d Time left: %d\n", i, nodes[i].time_left);
+        if (sgx_table[i].time_left > 0) {
+            ERR("Node %d Time left: %d\n", i, sgx_table[i].time_left);
         }
-        assert(nodes[i].time_left == 0);
+        assert(sgx_table[i].time_left == 0);
     }
 #endif
 
