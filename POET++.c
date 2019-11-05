@@ -17,8 +17,8 @@
 
 #define ffprintf(...) do{ fprintf(out, __VA_ARGS__); printf(__VA_ARGS__); } while(0)
 
-#define MAX_SIZE 10000
-#define MAX_ITERATIONS 15
+#define MAX_SIZE 1000000
+#define MAX_ITERATIONS 100000*3
 
 /*********************************************************************/
 
@@ -31,6 +31,8 @@ float sumT[MAX_SIZE];
 FILE *out;
 
 queue_t *queue = NULL;
+
+static int calc_tier_number(node_t *node);
 
 uint randint(int start, int end) {
     assert(start <= end);
@@ -67,6 +69,14 @@ void get_input_from_user(int prompt) {
         sgx_table[i].n_leadership = 0;
         sgx_table[i].time_left = sgx_table[i].sgx_time;
     }
+
+    node_t tmp;
+    for(size_t time = 1; time <= sgx_max; time++) {
+        tmp.sgx_time = time;
+        printf("(%lu)%d,", time, calc_tier_number(&tmp));
+    }
+    printf("\n");
+
 }
 
 static int calc_tier_number(node_t *node) {
@@ -85,9 +95,9 @@ static int calc_tier_number(node_t *node) {
 }
 
 void print_sgx_table() {
-    printf("Pass:\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
+    ffprintf("Pass:\tArrivaltime\tSGXtime\t#Leader\ttimeLeft\n");
     for (int i = 0; i < node_count; i++) {
-        printf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
+        ffprintf("[Node%03d]:\t%5d\t%5d\t%5d\t%5d\n",
                i,
                sgx_table[i].arrival_time,
                sgx_table[i].sgx_time,
@@ -107,9 +117,6 @@ int is_time_left() {
             ffprintf("The leader of this pass is [Node%03d]\n", i);
             sgx_table[i].time_left = sgx_table[i].sgx_time = randint(1, sgx_max);
             sgx_table[i].arrival_time = current_time+1;
-            int *nid = malloc(sizeof(int));
-            *nid = i;
-            queue_push(queue, nid);
         }
     }
     return b;
@@ -139,10 +146,10 @@ void calculate_quantum_time() {
         }
     }
 
-    printf("CURRENT time: %d\n", current_time);
+    ffprintf("CURRENT time: %d\n", current_time);
     for (int i = 0; i < total_tiers; i++) {
-        printf("Quantum time for tier %d: %u\n", i, tier_quantum_time[i]);
-        printf("Nodes in tier %d: %u\n", i, tier_active_nodes[i]);
+        ffprintf("Quantum time for tier %d: %u\n", i, tier_quantum_time[i]);
+        ffprintf("Nodes in tier %d: %u\n", i, tier_active_nodes[i]);
     }
 }
 
@@ -195,12 +202,12 @@ void arrange() {
 }
 
 void show_overall_queue() {
-    printf("Overall Queue:\n");
-    printf("-------------\n");
+    ffprintf("Overall Queue:\n");
+    ffprintf("-------------\n");
     for (int i = 0; i < current_time; i++) {
-        printf("[Node%d]", nodes_queue[i]);
+        ffprintf("[Node%d]", nodes_queue[i]);
     }
-    printf("\n");
+    ffprintf("\n");
 
     /*********************************/
 //
@@ -227,10 +234,11 @@ void show_overall_queue() {
 //    printf("Standard Deviation for Waiting time: %f\n", st_deviation);
 }
 
-void waiting_time() {
-    uint release_time, t;
+void waiting_time() { // DEBUG
+    uint release_time;
+    int t;
     for (uint i = 0; i < node_count; i++) {
-        for (t = current_time - 1; nodes_queue[t] != i; t--);
+        for (t = (int) current_time - 1; t >= 0 && nodes_queue[t] != i; t--);
         release_time = t + 1;
         wait_times[i] = release_time - sgx_table[i].arrival_time - sgx_table[i].sgx_time;
     }
@@ -262,6 +270,31 @@ void average_estimated_time() {
 
     st_deviation = sqrtf(st_deviation / (float) (node_count - 1));
     printf("Standard Deviation for Elapsed time: %f\n", st_deviation);
+}
+
+void print_average_leadership() {
+    ffprintf("Average and standard deviation of leadership\n");
+    ffprintf("----------------------");
+
+    float sum = 0.0f;
+    float std = 0.0f;
+
+    for(int i = 0; i < (int) node_count; i++) {
+        sum += sgx_table[i].n_leadership;
+    }
+
+    sum /= (float) node_count;
+
+    for(int i = 0; i < (int) node_count; i++) {
+        float sq = sgx_table[i].n_leadership - sum;
+        sq *= sq;
+        std += sq;
+    }
+
+    std /= ((float) node_count -1);
+    std = sqrtf(std);
+
+    ffprintf("average: %.3f || std: %.3f\n", sum, std);
 }
 
 void pause_for_user(int promptUser, int clearStream) {
@@ -298,6 +331,7 @@ int main(int argc, char *argv[]) {
     waiting_time();
     show_overall_queue();
 //    average_estimated_time();
+    print_average_leadership();
 
 #ifdef __linux__
     int promptUser = 0;
