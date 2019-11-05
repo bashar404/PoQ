@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <signal.h>
 
 #include "poet_common_definitions.h"
 
@@ -17,12 +18,15 @@
 
 #define ffprintf(...) do{ fprintf(out, __VA_ARGS__); printf(__VA_ARGS__); } while(0)
 
-#define MAX_SIZE 1000000
-#define MAX_ITERATIONS 100000*3
+#define MAX_SIZE 20000000
+#define MAX_ITERATIONS 100000
 
 /*********************************************************************/
 
 node_t sgx_table[MAX_SIZE];
+
+int max_iterations;
+int should_terminate = 0;
 
 uint node_count, sgx_max, arrival_time_max, total_tiers, current_time;
 uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
@@ -49,6 +53,9 @@ void get_input_from_user(int prompt) {
     seed = seed >= 0 ? max(0,seed) : (int) time(NULL);
     srand(seed);
 
+    printf("Max number of iterations (-1 for infinite): ");
+    scanf("%d", &max_iterations);
+
     if (prompt) printf("Number of nodes in the network: ");
     scanf("%d", &node_count);
 
@@ -64,7 +71,7 @@ void get_input_from_user(int prompt) {
         int b = randint(1, sgx_max);
         int a = randint(0, 10); // FIXME: what is this used for?
 	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
-        sgx_table[i].arrival_time = at;
+        sgx_table[i].arrival_time = 0;
         sgx_table[i].sgx_time = b;
         sgx_table[i].n_leadership = 0;
         sgx_table[i].time_left = sgx_table[i].sgx_time;
@@ -168,7 +175,7 @@ void arrange() {
     int current_node;
 
     check_node_arrive();
-    while (is_time_left() && current_time < MAX_ITERATIONS) {
+    while (is_time_left() && current_time != max_iterations && !should_terminate) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
@@ -307,9 +314,16 @@ void pause_for_user(int promptUser, int clearStream) {
     getchar();
 }
 
+// Define the function to be called when ctrl-c (SIGINT) signal is sent to process
+static void signal_callback_handler(int signum) {
+    should_terminate = 1;
+//    exit(SIGINT);
+}
+
 int main(int argc, char *argv[]) {
     /* Variables initialization */
     current_time = 0;
+    signal(SIGINT, signal_callback_handler);
     
     memset(nodes_queue, 0, sizeof(nodes_queue));
     memset(elapsed_time, 0, sizeof(elapsed_time));
@@ -325,6 +339,11 @@ int main(int argc, char *argv[]) {
     get_input_from_user(show_user_prompt);
 
     ERR("********* Begins execution *********\n");
+    time_t start_time = time(NULL);
+    struct tm  ts;
+    ts = *localtime(&start_time);
+    char buf[80];
+    ffprintf("Start time: %s\n", buf);
 
     print_sgx_table();
     arrange();
@@ -338,6 +357,12 @@ int main(int argc, char *argv[]) {
 #else
     int promptUser = 1;
 #endif
+    time_t finish_time = time(NULL);
+    strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &ts);
+    printf("%s\n", buf);
+    ffprintf("Finish time: %s\n", buf);
+    ffprintf("Time difference: %lu\n", finish_time - start_time);
+
 
     pause_for_user(promptUser, promptUser);
     queue_destructor(queue, 1);

@@ -630,3 +630,5 @@ poet_server
 *_t.*
 *_u.*
 *.cbp
+
+*.txt
