@@ -24,6 +24,7 @@ extern "C" {
 
 #define RETRIES_THRESHOLD 10
 #define ENDING_CHARACTER '\0'
+#define ENDING_STRING "\r\n"
 
 #include "socket_t.h"
 #include "queue_t.h"
@@ -195,7 +196,7 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
     return valread;
 }
 
-char *concat_buffers(queue_t *queue) {
+static char *concat_buffers(queue_t *queue) {
     size_t expected_size = queue_size(queue) * BUFFER_SIZE;
 
     char *buffer = malloc(expected_size);
@@ -251,7 +252,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
             perror("malloc");
             goto error;
         }
-        memset(current_buffer, ENDING_CHARACTER, BUFFER_SIZE);
+        memset(current_buffer, 0, BUFFER_SIZE);
         queue_push(buffer_queue, current_buffer);
 
         retries = 0;
@@ -273,7 +274,9 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
             goto error;
         }
 
-        if (current_buffer[BUFFER_SIZE - 1] == ENDING_CHARACTER) { /* The message have been all received */
+        char *end_of_message = strstr(current_buffer, "\r\n");
+        if (end_of_message != NULL) { /* The message have been all received */
+            *end_of_message = '\0';
             received = strlen(current_buffer);
             finished = 1;
         }
@@ -352,6 +355,13 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
         total_sent += sent;
     } while (total_sent < buffer_len && retries < RETRIES_THRESHOLD);
 
+    sent = socket_send(soc, ENDING_STRING, strlen(ENDING_STRING));
+    if (sent < strlen(ENDING_STRING)) {
+        ERR("Error sending ending of message\n");
+        goto error;
+    }
+//    total_sent += sent;
+
 #ifdef DEBUG
     ERRR("Message sent: [%.*s] on socket %d\n", total_sent, buffer, soc->socket_descriptor);
     if (total_sent < buffer_len) {
@@ -374,6 +384,7 @@ void socket_close(socket_t *soc) {
     ERR("closing socket: %d\n", soc->socket_descriptor);
 
     if (soc->is_closed) {
+        ERR("WARNING: Trying to close an already closed socket %d\n", soc->socket_descriptor);
         return;
     }
 

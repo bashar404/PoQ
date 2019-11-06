@@ -483,6 +483,8 @@ int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &startin
 
     quantum_time = tier = starting_time = 0;
 
+
+
     // TODO
 
     return state;
@@ -510,10 +512,12 @@ int main(int argc, char *argv[]) {
             get_queue_and_sgx_table();
             uint quantum_time, tier, starting_time;
             calculate_necessary_parameters(quantum_time, tier, starting_time);
-            printf("%u, %u, %u\n", quantum_time, tier, starting_time);
+            printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
 
             // TODO finish
         }
+
+        should_terminate = 1;
     }
 
     state = state && get_queue_and_sgx_table();
