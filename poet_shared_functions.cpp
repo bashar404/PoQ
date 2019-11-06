@@ -1,33 +1,29 @@
 #include <json-parser/json.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <assert.h>
-#include <string.h>
-#include <math.h>
-#include <errno.h>
+#include <cassert>
+#include <cstring>
+#include <cmath>
+#include <cerrno>
 
 #include "queue_t.h"
 #include "general_structs.h"
 
 // BFS
 json_value *find_value(json_value *u, const char *name) {
-    assert(u != NULL);
-    assert(name != NULL);
+    assert(u != nullptr);
+    assert(name != nullptr);
 
-    json_value *r = NULL;
+    json_value *r = nullptr;
     queue_t *queue = queue_constructor();
     queue_push(queue, u);
 
-    while (!queue_is_empty(queue) && r == NULL) {
-        u = queue_front(queue);
+    while (!queue_is_empty(queue) && r == nullptr) {
+        u = (json_value *) queue_front(queue);
         queue_pop(queue);
 
         switch (u->type) {
             case json_object:
-                for (int i = 0; i < u->u.object.length && r == NULL; i++) {
+                for (int i = 0; i < u->u.object.length && r == nullptr; i++) {
                     json_object_entry *entry = &(u->u.object.values[i]);
                     queue_push(queue, entry->value);
 
@@ -57,7 +53,7 @@ json_value *find_value(json_value *u, const char *name) {
 }
 
 int calc_tier_number(node_t *node, uint total_tiers, uint sgx_max) {
-    assert(node != NULL);
+    assert(node != nullptr);
 
     /* Since its treated as an index, it is reduced by 1 */
     int tier;
@@ -83,8 +79,8 @@ static int comp_address(const void *a, const void *b) {
 
 int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
     assert(locks > 0);
-    pthread_rwlock_t **locks_list = calloc(locks, sizeof(pthread_rwlock_t *));
-    if (locks_list == NULL) {
+    auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
+    if (locks_list == nullptr) {
         perror("rwlock_timedrdlock calloc");
         return 0;
     }
@@ -122,8 +118,8 @@ int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
 
 int nrwlock_unlocks(uint locks, ...) {
     assert(locks > 0);
-    pthread_rwlock_t **locks_list = calloc(locks, sizeof(pthread_rwlock_t *));
-    if (locks_list == NULL) {
+    auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
+    if (locks_list == nullptr) {
         perror("nrwlock_unlock calloc");
         return 0;
     }
@@ -147,7 +143,3 @@ int nrwlock_unlocks(uint locks, ...) {
     errno = errv;
     return unlocked;
 }
-
-#ifdef __cplusplus
-}
-#endif

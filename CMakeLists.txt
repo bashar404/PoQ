@@ -16,7 +16,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SGX REQUIRED)
 
 add_executable(poet_main
-        POET++.c socket_t.c queue_t.c general_structs.c poet_shared_functions.c)
+        POET++.c socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp)
 target_link_libraries(poet_main m pthread)
 
 # --------------- CLIENT ---------------------
@@ -27,7 +27,7 @@ set(LDS poet_client/enclave/enclave.lds)
 add_enclave_library(enclave SRCS ${E_SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS} LDSCRIPT ${LDS})
 enclave_sign(enclave KEY poet_client/enclave/enclave_private.pem CONFIG poet_client/enclave/enclave.config.xml)
 set(SRCS poet_client/poet_client.cpp poet_client/enclave_helper.c socket_t.c queue_t.c
-        general_structs.c json-parser/json.c poet_shared_functions.c
+        poet_shared_functions.cpp general_structs.cpp json-parser/json.c
         json_checks.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 add_untrusted_executable(client SRCS ${SRCS} EDL poet_client/enclave/enclave.edl EDL_SEARCH_PATHS ${EDL_SEARCH_PATHS})
 add_dependencies(client enclave-sign)
@@ -48,6 +48,6 @@ add_dependencies(client enclave-sign)
 
 add_executable(poet_server
         poet_server.cpp socket_t.c queue_t.c
-        general_structs.c json-parser/json.c poet_server_functions.cpp poet_shared_functions.c
+        poet_shared_functions.cpp general_structs.cpp json-parser/json.c poet_server_functions.cpp
         JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c json_checks.c)
 target_link_libraries(poet_server m pthread)

@@ -1,11 +1,7 @@
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
 
 #include "base64.c"
 
@@ -17,16 +13,16 @@ extern "C" {
 #define LOWERCASE(x) ((x) | ((unsigned char)0x10))
 
 const char *node_t_to_json(const node_t *node) {
-    assert(node != NULL);
+    assert(node != nullptr);
     char *buffer = (char *) malloc(BUFFER_SIZE);
-    char *wbuffer = NULL;
-    if (buffer != NULL) {
+    char *wbuffer = nullptr;
+    if (buffer != nullptr) {
         sprintf(buffer,
-                "{\"node_id\": %u, \"sgx_time\": %u, \"arrival_time\": %u, \"time_left\": %u, \"n_leadership\": %u}",
+                R"({"node_id": %u, "sgx_time": %u, "arrival_time": %u, "time_left": %u, "n_leadership": %u})",
                 node->node_id, node->sgx_time, node->arrival_time, node->time_left, node->n_leadership);
         size_t len = strlen(buffer);
-        wbuffer = malloc(len+1);
-        if (wbuffer != NULL) {
+        wbuffer = (char *) (malloc(len + 1));
+        if (wbuffer != nullptr) {
             strcpy(wbuffer, buffer);
             free(buffer);
         } else {
@@ -42,55 +38,55 @@ const char *node_t_to_json(const node_t *node) {
 }
 
 int json_to_node_t(const json_value *json, node_t *node) {
-    assert(json != NULL);
+    assert(json != nullptr);
     assert(json->type == json_object);
 
-    json_value *root = (json_value *) json;
+    auto *root = (json_value *) json;
 
     int state = 1;
-    json_value *value = NULL;
+    json_value *value = nullptr;
 
     value = find_value(root, "node_id");
-    state = state && value != NULL;
+    state = state && value != nullptr;
     if (state) node->node_id = value->u.integer;
 
-    value = state ? find_value(root, "sgx_time") : NULL;
-    state = state && value != NULL;
+    value = state ? find_value(root, "sgx_time") : nullptr;
+    state = state && value != nullptr;
     if (state) node->sgx_time = value->u.integer;
 
-    value = state ? find_value(root, "n_leadership") : NULL;
-    state = state && value != NULL;
+    value = state ? find_value(root, "n_leadership") : nullptr;
+    state = state && value != nullptr;
     if (state) node->n_leadership = value->u.integer;
 
-    value = state ? find_value(root, "time_left") : NULL;
-    state = state && value != NULL;
+    value = state ? find_value(root, "time_left") : nullptr;
+    state = state && value != nullptr;
     if (state) node->time_left = value->u.integer;
 
-    value = state ? find_value(root, "arrival_time") : NULL;
-    state = state && value != NULL;
+    value = state ? find_value(root, "arrival_time") : nullptr;
+    state = state && value != nullptr;
     if (state) node->arrival_time = value->u.integer;
 
     return state;
 }
 
 void free_poet_context(struct poet_context *context) {
-    assert(context != NULL);
+    assert(context != nullptr);
 
-    if (context->public_key != NULL) {
+    if (context->public_key != nullptr) {
         free(context->public_key);
-        context->public_key = NULL;
+        context->public_key = nullptr;
     }
 
-    if (context->signature != NULL) {
+    if (context->signature != nullptr) {
         free(context->signature);
-        context->signature = NULL;
+        context->signature = nullptr;
     }
 }
 
 char *encode_hex(void *buffer, size_t buffer_len) {
     size_t wbuffer_len = buffer_len * 2 + 10;
-    char *wbuffer = malloc(wbuffer_len);
-    if (wbuffer == NULL) {
+    char *wbuffer = (char *) (malloc(wbuffer_len));
+    if (wbuffer == nullptr) {
         perror("malloc");
         goto error;
     }
@@ -105,10 +101,10 @@ char *encode_hex(void *buffer, size_t buffer_len) {
 
     error:
     fprintf(stderr, "Fatal error, can not proceed with sending message");
-    if (wbuffer != NULL) {
+    if (wbuffer != nullptr) {
         free(wbuffer);
     }
-    wbuffer = NULL;
+    wbuffer = nullptr;
 
     terminate:
     return wbuffer;
@@ -117,14 +113,14 @@ char *encode_hex(void *buffer, size_t buffer_len) {
 unsigned char *encode_64base(const void *buffer, size_t buffer_len) {
     size_t out_len;
     unsigned char *out = base64_encode((unsigned char *) buffer, buffer_len, &out_len);
-    if (out != NULL) {
+    if (out != nullptr) {
         out[out_len - 1] = '\0';
     }
     return out;
 }
 
 void *decode_64base(const char *buffer, size_t buffer_len, size_t *out_len) {
-    assert(out_len != NULL);
+    assert(out_len != nullptr);
     return base64_decode((const unsigned char *) buffer, buffer_len, out_len);
 }
 
@@ -143,19 +139,20 @@ unsigned char hexchr2bin(const char hex) {
 }
 
 void *decode_hex(const char *buffer, size_t buffer_len) {
-    assert(buffer != NULL);
+    assert(buffer != nullptr);
     assert(buffer_len > 0);
 
+    unsigned char c;
+    size_t pos = 0;
+
     size_t wbuff_len = buffer_len / 2 + 1;
-    char *wbuffer = malloc(wbuff_len);
-    if (wbuffer == NULL) {
+    char *wbuffer = (char *) (malloc(wbuff_len));
+    if (wbuffer == nullptr) {
         perror("malloc");
         goto error;
     }
     memset(wbuffer, 0, wbuff_len);
 
-    unsigned char c;
-    size_t pos = 0;
     for (size_t i = 0; i < buffer_len; i += 2) {
         assert(pos < wbuff_len);
         c = hexchr2bin(buffer[i]);
@@ -168,15 +165,11 @@ void *decode_hex(const char *buffer, size_t buffer_len) {
 
     error:
     fprintf(stderr, "Fatal error, can not proceed with converting hex message to raw bytes");
-    if (wbuffer != NULL) {
+    if (wbuffer != nullptr) {
         free(wbuffer);
     }
-    wbuffer = NULL;
+    wbuffer = nullptr;
 
     terminate:
     return wbuffer;
 }
-
-#ifdef __cplusplus
-};
-#endif
