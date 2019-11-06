@@ -43,7 +43,7 @@ uint randint(int start, int end) {
     start = max(0, min(start, RAND_MAX));
     end = max(0, min(end, RAND_MAX));
 
-    return start + rand() % end;
+    return end > 0 ? start + rand() % end : 0;
 }
 
 void get_input_from_user(int prompt) {

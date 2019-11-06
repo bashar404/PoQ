@@ -441,7 +441,7 @@ int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet
     state = state && buffer != nullptr;
     if (state) {
         uint written = 0;
-        written += sprintf(buffer, R"({"status":"success", "data":{"queue": )");
+        written += sprintf(buffer, R"({"status":"success", "data":{"current_time": %lu, "queue": )", time(nullptr));
         strcat(buffer + written, qs.c_str());
         written += qs.length();
         strcat(buffer + written, R"(, "sgx_table": )");

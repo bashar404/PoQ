@@ -14,7 +14,7 @@ json_value *find_value(json_value *u, const char *name);
 
 int calc_tier_number(node_t *node, uint total_tiers, uint sgx_max);
 
-
+int calc_quantum_time(uint n_nodes, node_t *node, node_t *nodes);
 
 
 

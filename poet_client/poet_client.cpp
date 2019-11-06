@@ -7,6 +7,7 @@
 #include <general_structs.h>
 #include <vector>
 #include <string>
+#include <csignal>
 
 #include "socket_t.h"
 #include "poet_shared_functions.h"
@@ -26,8 +27,13 @@
 #define PORT 9000
 #define SERVER_IP "127.0.0.1"
 
+int should_terminate = 0;
+char *server_ip = nullptr;
+
 socket_t *node_socket = nullptr;
 sgx_enclave_id_t eid = 0;
+
+time_t server_current_time;
 
 uint sgxt;
 uint sgxmax;
@@ -42,11 +48,25 @@ std::vector<node_t> sgx_table;
 std::vector<uint> queue; // intentionally not a real queue
 
 void global_variable_initialization() {
-    node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
+    server_ip = (char *) malloc(18);
+    printf("Set the ip address to communicate (-1 for 127.0.0.1): ");
+    scanf("%18s", server_ip);
+    if (strcmp("-1", server_ip) == 0) {
+        strcpy(server_ip, SERVER_IP);
+    }
+
+    node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, server_ip, PORT);
+
+    /* Initialize the enclave */
+    if (initialize_enclave(&eid) < 0) {
+        fprintf(stderr, "Could not create Enclave\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void global_variable_destructors() {
     socket_destructor(node_socket);
+    sgx_destroy_enclave(eid);
 }
 
 static void fill_with_rand(void *input, size_t len) {
@@ -124,11 +144,9 @@ static uint generate_random_sgx_time() {
     return sgx_time;
 }
 
-static int poet_register_to_server() {
+static int poet_register_with_pk() {
     char *buffer = (char *) malloc(BUFFER_SIZE);
     int state = 1;
-    json_value *json = nullptr;
-    json_value *json_status = nullptr;
 
     public_key_t &pk = public_key;
     fill_with_rand(&pk, sizeof(public_key_t)); // TODO: change
@@ -152,11 +170,11 @@ static int poet_register_to_server() {
     free(pk_64base);
     free(sign_64base);
 
-    // receive msg from server
+    state = socket_get_message(node_socket, (void **) (&buffer), &len) > 0;
+    state = state && check_json_compliance(buffer, len);
 
-    socket_get_message(node_socket, (void **) (&buffer), &len);
-
-    state = check_json_compliance(buffer, len);
+    json_value *json = nullptr;
+    json_value *json_status = nullptr;
 
     if (state) {
         json = json_parse(buffer, len);
@@ -182,39 +200,33 @@ static int poet_register_to_server() {
         if (state) node_id = find_value(json, "node_id")->u.integer;
     }
 
-    if (state)
-        printf("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
-               node_id);
-
-    if (state) {
-        // if everything went well then do the remote attestation
-        state = poet_remote_attestation_to_server();
-    }
-
-    // respond the server with sgxt
-    free(buffer);
-    if (state) {
-        sgxt = generate_random_sgx_time();
-        printf("SGXt is generated: %u\n", sgxt);
-
-        buffer = (char *) malloc(BUFFER_SIZE);
-        if (buffer == nullptr) {
-            perror("malloc");
-            state = 0;
-            goto error;
-        }
-        sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt": %u}})",
-                sgxt); // TODO: should send its identity from the enclave in it
-        printf("Sending SGXt (%u) to the server\n", sgxt);
-        state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
-
-        free(buffer);
-        buffer = nullptr;
-    }
-
     json_value_free(json);
-    json = nullptr;
+    return state;
+}
 
+static int poet_broadcast_sgxtime() {
+    char *buffer;
+    int state = 1;
+    json_value *json = nullptr;
+    json_value *json_status = nullptr;
+
+    sgxt = generate_random_sgx_time();
+    ERR("SGXt is generated: %u\n", sgxt);
+
+    buffer = (char *) malloc(BUFFER_SIZE);
+    if (buffer == nullptr) {
+        perror("malloc");
+        state = 0;
+        goto error;
+    }
+    sprintf(buffer, R"({"method":"sgx_time_broadcast", "data":{"sgxt": %u}})",
+            sgxt); // TODO: should send its identity from the enclave in it
+    ERR("Sending SGXt (%u) to the server\n", sgxt);
+    state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
+
+    free(buffer);
+
+    size_t len;
     if (state) { // getting reply of success
         socket_get_message(node_socket, (void **) &buffer, &len);
         state = check_json_compliance(buffer, len);
@@ -233,9 +245,6 @@ static int poet_register_to_server() {
     }
 
     error:
-    printf("Server registration %s\n", state ? "successful" : "failed");
-    sgx_destroy_enclave(eid);
-
     if (buffer != nullptr) {
         free(buffer);
     }
@@ -243,6 +252,23 @@ static int poet_register_to_server() {
     if (json != nullptr) {
         json_value_free(json);
     }
+
+    return state;
+}
+
+static int poet_register_to_server() {
+    int state = 1;
+
+    state = state && poet_register_with_pk();
+
+    if (state)
+        ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
+               node_id);
+
+    state = state && poet_remote_attestation_to_server();
+
+    error:
+    ERR("Server registration %s\n", state ? "successful" : "failed");
 
     return state;
 }
@@ -404,6 +430,12 @@ static bool get_queue_and_sgx_table() {
         }
     }
 
+    if (state) {
+        json_value *json_current_time = find_value(json, "current_time");
+        state = json_current_time != nullptr && json_current_time->type == json_integer;
+        if (state) server_current_time = json_current_time->u.integer;
+    }
+
     state = state && get_queue_from_json(json);
     state = state && get_sgx_table_from_json(json);
 
@@ -441,16 +473,27 @@ static bool server_close_connection() {
     return state;
 }
 
+static void signal_callback_handler(int signum) {
+    should_terminate = 1;
+    printf("\nReceived signal %d\n", signum);
+}
+
+int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &starting_time) {
+    int state = 1;
+
+    quantum_time = tier = starting_time = 0;
+
+    // TODO
+
+    return state;
+}
+
 int main(int argc, char *argv[]) {
     // TODO: receive parameters by command line
 
-    global_variable_initialization();
+    signal(SIGINT, signal_callback_handler);
 
-    /* Initialize the enclave */
-    if (initialize_enclave(&eid) < 0) {
-        fprintf(stderr, "Could not create Enclave\n");
-        return EXIT_FAILURE;
-    }
+    global_variable_initialization();
 
     ERR("trying to establish connection with server\n");
     socket_connect(node_socket);
@@ -459,6 +502,18 @@ int main(int argc, char *argv[]) {
     int state = poet_register_to_server();
     if (!state) {
         fprintf(stderr, "Something failed ...\n");
+    }
+
+    while(!should_terminate && state) {
+        state = poet_broadcast_sgxtime();
+        if (state) {
+            get_queue_and_sgx_table();
+            uint quantum_time, tier, starting_time;
+            calculate_necessary_parameters(quantum_time, tier, starting_time);
+            printf("%u, %u, %u\n", quantum_time, tier, starting_time);
+
+            // TODO finish
+        }
     }
 
     state = state && get_queue_and_sgx_table();

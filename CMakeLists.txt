@@ -9,7 +9,7 @@ include_directories(.)
 
 set(SGX_HW ON)
 add_definitions(-DNO_RA)
-#add_definitions(-DDEBUG)
+add_definitions(-DDEBUG)
 add_definitions(-g)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
