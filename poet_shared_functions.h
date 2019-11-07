@@ -4,14 +4,17 @@
 #include <json-parser/json.h>
 
 #include <cstdarg>
+#include <vector>
+#include "queue_t.h"
 
 /* Should return NULL if not found */
 json_value *find_value(json_value *u, const char *name);
 
-int calc_tier_number(node_t *node, uint total_tiers, uint sgx_max);
+int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max);
 
-int calc_quantum_time(uint n_nodes, node_t *node, node_t *nodes);
+std::vector<uint> calc_quantum_times(const std::vector<node_t *> &sgx_table, uint ntiers, uint sgx_max);
 
+std::vector<time_t> calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, node_t &current_node);
 
 
 /* *************************** For locking *************************** */

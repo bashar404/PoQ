@@ -10,6 +10,7 @@
 #include <csignal>
 
 #include "socket_t.h"
+#include "queue_t.h"
 #include "poet_shared_functions.h"
 #include "json_checks.h"
 #include "enclave_helper.h"
@@ -37,6 +38,7 @@ time_t server_current_time;
 
 uint sgxt;
 uint sgxmax;
+uint ntiers;
 uint sgx_lowerbound;
 uint node_id;
 
@@ -44,8 +46,8 @@ public_key_t public_key;
 signature_t signature;
 
 /* Dynamic variables */
-std::vector<node_t> sgx_table;
-std::vector<uint> queue; // intentionally not a real queue
+std::vector<node_t *> sgx_table;
+queue_t *queue;
 
 void global_variable_initialization() {
     server_ip = (char *) malloc(18);
@@ -56,6 +58,7 @@ void global_variable_initialization() {
     }
 
     node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, server_ip, PORT);
+    queue = queue_constructor();
 
     /* Initialize the enclave */
     if (initialize_enclave(&eid) < 0) {
@@ -193,11 +196,15 @@ static int poet_register_with_pk() {
 
         json_tmp = find_value(json, "sgxt_lower");
         state = json_tmp != nullptr && json_tmp->type == json_integer;
-        if (state) sgx_lowerbound = find_value(json, "sgxt_lower")->u.integer;
+        if (state) sgx_lowerbound = json_tmp->u.integer;
 
         json_tmp = find_value(json, "node_id");
         state = json_tmp != nullptr && json_tmp->type == json_integer;
-        if (state) node_id = find_value(json, "node_id")->u.integer;
+        if (state) node_id = json_tmp->u.integer;
+
+        json_tmp = find_value(json, "n_tiers");
+        state = json_tmp != nullptr && json_tmp->type == json_integer;
+        if (state) ntiers = json_tmp->u.integer;
     }
 
     json_value_free(json);
@@ -292,12 +299,15 @@ static bool get_sgx_table_from_json(json_value *json) {
     }
 
     if (state) {
+        for(auto it = sgx_table.begin(); it != sgx_table.end(); it++) {
+            delete *it;
+        }
         sgx_table.clear();
 
         json_value **json_node = json_sgx_table->u.array.begin();
         while (state && json_node != json_sgx_table->u.array.end()) {
-            node_t node;
-            state = json_to_node_t(*json_node, &node);
+            auto node = new node_t();
+            state = json_to_node_t(*json_node, node);
             json_node++;
             sgx_table.push_back(node);
         }
@@ -352,7 +362,8 @@ static bool get_queue_from_json(json_value *json) {
 
     if (state) {
         /* Empty the queue */
-        queue.clear();
+        queue_destructor(queue, 0);
+        queue = queue_constructor();
 
         json_value **json_node = json_queue->u.array.begin();
         while (state && json_node != json_queue->u.array.end()) {
@@ -362,7 +373,7 @@ static bool get_queue_from_json(json_value *json) {
             state = state && value != nullptr && value->type == json_integer;
             nid = value->u.integer;
             json_node++;
-            queue.push_back(nid);
+            queue_push(queue, (void *) (nid));
         }
 
         if (!state) {
@@ -481,11 +492,11 @@ static void signal_callback_handler(int signum) {
 int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &starting_time) {
     int state = 1;
 
-    quantum_time = tier = starting_time = 0;
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgxmax);
 
-
-
-    // TODO
+    tier = calc_tier_number(*sgx_table[node_id], ntiers, sgxmax);
+    quantum_time = quantum_times[tier];
+    starting_time = -1;
 
     return state;
 }
@@ -524,15 +535,12 @@ int main(int argc, char *argv[]) {
     if (state) {
         printf("SGX Table:\n---------------------\n");
         for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
-            printf("%s\n", node_to_json(*i).c_str());
+            printf("%s\n", node_to_json(**i).c_str());
         }
         printf("---------------------\n");
 
         printf("Queue: ");
-        for (auto i = queue.begin(); i != queue.end(); i++) {
-            printf("[%u]", *i);
-        }
-        printf("\n");
+        queue_print(queue);
     }
 
     state = state && server_close_connection();

@@ -4,9 +4,11 @@
 #include <cstring>
 #include <cmath>
 #include <cerrno>
+#include <queue>
 
 #include "queue_t.h"
 #include "general_structs.h"
+#include "poet_shared_functions.h"
 
 // BFS
 json_value *find_value(json_value *u, const char *name) {
@@ -52,15 +54,54 @@ json_value *find_value(json_value *u, const char *name) {
     return r;
 }
 
-int calc_tier_number(node_t *node, uint total_tiers, uint sgx_max) {
-    assert(node != nullptr);
-
+int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max) {
     /* Since its treated as an index, it is reduced by 1 */
     int tier;
-    tier = (int) ceilf(total_tiers * (node->sgx_time / (float) sgx_max)) -1;
+    tier = (int) ceilf(total_tiers * (node.sgx_time / (float) sgx_max)) -1;
     assert(0 <= tier && tier < total_tiers);
 
     return tier;
+}
+
+std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint ntiers, uint sgx_max) {
+    assert(ntiers > 0);
+    assert(sgx_max > 0);
+
+    std::vector<uint> quantum_times(ntiers);
+    std::vector<uint> tier_active_nodes(ntiers);
+
+    for(auto node_i = sgx_table.begin(); node_i != sgx_table.end(); node_i++) {
+        int tier = calc_tier_number(*(*node_i), ntiers, sgx_max);
+        printf("tier: %d\n", tier);
+        quantum_times[tier] += (*node_i)->time_left;
+        tier_active_nodes[tier]++;
+    }
+
+    for(int i = 0; i < quantum_times.size(); i++) {
+        uint &qt = quantum_times[i];
+        uint &nn = tier_active_nodes[i];
+
+        qt = (uint) ceilf(((float) qt) / ((float) nn*nn));
+    }
+
+    return quantum_times;
+}
+
+static void copy_queuet_std_queue(void * node_ptr, void * std_queue_ptr) {
+    auto &q = *((std::queue<node_t *> *) std_queue_ptr);
+    auto &node = *((node_t *) node_ptr);
+
+    q.push(&node);
+}
+
+std::vector<time_t> calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, node_t &current_node) {
+    std::queue<node_t *> q;
+    queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
+
+    while(!q.empty()) {
+        node_t *u = q.front(); q.pop();
+
+    }
 }
 
 static int comp_address(const void *a, const void *b) {

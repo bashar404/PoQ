@@ -162,8 +162,8 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
     /*****************************/
 
     msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u}})", sgxmax,
-            sgxt_lowerbound, context->node->node_id);
+    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u, "n_tiers": %u}})", sgxmax,
+            sgxt_lowerbound, context->node->node_id, n_tiers);
     ERR("Server is sending sgxmax (%lu) to the node\n", sgxmax);
     socket_send_message(socket, msg, strlen(msg));
     free(msg);

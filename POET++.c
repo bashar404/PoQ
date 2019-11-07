@@ -27,6 +27,7 @@ node_t sgx_table[MAX_SIZE];
 
 int max_iterations;
 int should_terminate = 0;
+int nodes_rejoin;
 
 uint node_count, sgx_max, arrival_time_max, total_tiers, current_time;
 uint nodes_queue[MAX_SIZE], elapsed_time[MAX_SIZE], wait_times[MAX_SIZE], tier_active_nodes[MAX_SIZE], tier_quantum_time[MAX_SIZE];
@@ -65,14 +66,30 @@ void get_input_from_user(int prompt) {
     if (prompt) printf("Total number of tiers: ");
     scanf("%d", &total_tiers);
 
-    if (prompt) printf("Arrival maximum time for first pass: ");
-    scanf("%d", &arrival_time_max);
+    int take_from_stdin = 0;
+    printf("Get SGXtable from user (0 for no): ");
+    scanf("%d", &take_from_stdin);
+
+    printf("Rejoin nodes after they finish (0 for no): ");
+    scanf("%d", &nodes_rejoin);
+
+    if (prompt && !take_from_stdin) {
+        printf("Arrival maximum time for first pass: ");
+        scanf("%d", &arrival_time_max);
+    } else {
+        arrival_time_max = 0;
+    }
+
     for (int i = 0; i < node_count; i++) {
-        int b = randint(1, sgx_max);
-        int a = randint(0, 10); // FIXME: what is this used for?
-	    int at = randint(0, arrival_time_max); // arrival time is randomly generated
-        sgx_table[i].arrival_time = 0;
-        sgx_table[i].sgx_time = b;
+        int time, at;
+        if (!take_from_stdin) {
+            time = randint(1, sgx_max);
+            at = randint(0, arrival_time_max); // arrival time is randomly generated
+        } else {
+            scanf("%d%d", &at, &time);
+        }
+        sgx_table[i].arrival_time = at;
+        sgx_table[i].sgx_time = time;
         sgx_table[i].n_leadership = 0;
         sgx_table[i].time_left = sgx_table[i].sgx_time;
     }
@@ -120,7 +137,7 @@ int is_time_left() {
         b = b || (sgx_table[i].time_left > 0);
         int previous_leadership = sgx_table[i].n_leadership;
         sgx_table[i].n_leadership += (sgx_table[i].time_left == 0);
-        if (previous_leadership != sgx_table[i].n_leadership) {
+        if (nodes_rejoin && previous_leadership != sgx_table[i].n_leadership) {
             ffprintf("The leader of this pass is [Node%03d]\n", i);
             sgx_table[i].time_left = sgx_table[i].sgx_time = randint(1, sgx_max);
             sgx_table[i].arrival_time = current_time+1;
@@ -164,9 +181,7 @@ void check_node_arrive() {
     for (int i = 0; i < node_count; i++) { /*when index[i=0] means AT is zero*/
         if (sgx_table[i].arrival_time == current_time) { /*time = 0 already declared*/
             calculate_quantum_time();
-            int * i_ptr = malloc(sizeof(int));
-            *i_ptr = i;
-            queue_push(queue, i_ptr);
+            queue_push(queue, (void*) i);
         }
     }
 }
@@ -175,14 +190,13 @@ void arrange() {
     int current_node;
 
     check_node_arrive();
-    while (is_time_left() && current_time != max_iterations && !should_terminate) {
+    while (is_time_left() && (max_iterations == -1 || current_time < max_iterations) && !should_terminate) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
             check_node_arrive();
         } else { // some sgx_table in the queue
-            current_node = *((int*)queue_front(queue));
-            free(queue_front(queue));
+            current_node = (int) queue_front(queue);
             queue_pop(queue);
 
             int temptier = calc_tier_number(&sgx_table[current_node]);
@@ -198,9 +212,7 @@ void arrange() {
             }
 
             if (sgx_table[current_node].time_left > 0) { // if sgx_table has SGX time left, then push to the queue
-                int* curr_node = malloc(sizeof(int));
-                *curr_node = current_node;
-                queue_push(queue, curr_node);
+                queue_push(queue, (void *) current_node);
             }
         }
 
@@ -365,7 +377,7 @@ int main(int argc, char *argv[]) {
 
 
     pause_for_user(promptUser, promptUser);
-    queue_destructor(queue, 1);
+    queue_destructor(queue, 0);
 
 #ifdef DEBUG
     /* General invariants after execution */
@@ -373,7 +385,6 @@ int main(int argc, char *argv[]) {
         if (sgx_table[i].time_left > 0) {
             ERR("Node %d Time left: %d\n", i, sgx_table[i].time_left);
         }
-        assert(sgx_table[i].time_left == 0);
     }
 #endif
 

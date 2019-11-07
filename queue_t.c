@@ -139,11 +139,7 @@ void queue_push(queue_t *q, void *d) {
 }
 
 static void generic_print(void *d) {
-    if (d == NULL) {
-        printf("[NIL]");
-        return;
-    }
-    printf("[%u]", *((unsigned int *) d));
+    printf("[%u]", (unsigned int) d);
 }
 
 void queue_print(queue_t *q) {
