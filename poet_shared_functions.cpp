@@ -97,12 +97,12 @@ static void copy_queuet_std_queue(void * node_ptr, void * std_queue_ptr) {
     q.push(node);
 }
 
-static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times) {
+static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntiers, uint sgx_max) {
     assert(u != nullptr);
-    assert(u->node_id < quantum_times.size());
-    printf("<<<<<<<<<<<<<<<<<<<<<<<<<<< %d\n", u->node_id < quantum_times.size());
 
-    return quantum_times[u->node_id];
+    int tier = calc_tier_number(*u, ntiers, sgx_max);
+
+    return quantum_times[tier];
 }
 
 time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
@@ -112,7 +112,7 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
     auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
 
     for(int i = 0; i < sgx_table.size(); i++) {
-        printf("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times));
+        printf("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times, ntiers, sgx_max));
     }
 
     /* **************** */
@@ -124,11 +124,28 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
     }
 
     uint u = q.front(); q.pop();
-    starting_time += sgx_table[u]->time_left;
+
+    uint lowest_at = 0; // TODO: change to -1
+    for(int i = 0; i < sgx_table.size(); i++) {
+        lowest_at = std::min(lowest_at, sgx_table[i]->arrival_time);
+    }
+
+    int u_tier = calc_tier_number(*sgx_table[u], ntiers, sgx_max);
+
+    uint accumulate_tier_qt = 0;
+    uint count_lowest_at = 0;
+    for(int i = 0; i < sgx_table.size(); i++) {
+        int tier = calc_tier_number(*sgx_table[i], ntiers, sgx_max);
+        accumulate_tier_qt += (tier == u_tier ? sgx_table[i]->time_left : 0);
+        count_lowest_at += (tier == u_tier ? (lowest_at == sgx_table[i]->arrival_time || 1) : 0); // TODO change (remove || 1)
+    }
+
+    uint tier_qt = (uint) ceilf(accumulate_tier_qt / (float) (count_lowest_at * count_lowest_at));
+    starting_time += tier_qt;
 
     while(!q.empty() && sgx_table[q.front()]->node_id != current_node.node_id) {
         u = q.front(); q.pop();
-        time_t qt = calc_qt(sgx_table[u], quantum_times);
+        time_t qt = calc_qt(sgx_table[u], quantum_times, ntiers, sgx_max);
         starting_time += qt;
     }
 
