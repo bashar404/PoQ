@@ -57,7 +57,7 @@ json_value *find_value(json_value *u, const char *name) {
 int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max) {
     /* Since its treated as an index, it is reduced by 1 */
     int tier;
-    tier = (int) ceilf(total_tiers * (node.sgx_time / (float) sgx_max)) -1;
+    tier = (int) ceilf(((float) total_tiers * node.sgx_time) / (float) sgx_max) -1;
     assert(0 <= tier && tier < total_tiers);
 
     return tier;
@@ -67,14 +67,16 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
     assert(ntiers > 0);
     assert(sgx_max > 0);
 
-    std::vector<uint> quantum_times(ntiers);
-    std::vector<uint> tier_active_nodes(ntiers);
+    std::vector<uint> quantum_times(ntiers, 0);
+    std::vector<uint> tier_active_nodes(ntiers, 0);
 
     for(auto node_i = sgx_table.begin(); node_i != sgx_table.end(); node_i++) {
         int tier = calc_tier_number(*(*node_i), ntiers, sgx_max);
         printf("tier: %d\n", tier);
         quantum_times[tier] += (*node_i)->time_left;
+        printf("accumulated quantum time: %d\n", quantum_times[tier]);
         tier_active_nodes[tier]++;
+        printf("tier active nodes: %d\n", tier_active_nodes[tier]);
     }
 
     for(int i = 0; i < quantum_times.size(); i++) {
@@ -82,26 +84,57 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
         uint &nn = tier_active_nodes[i];
 
         qt = (uint) ceilf(((float) qt) / ((float) nn*nn));
+        printf("Quantum time of tier %d: %u\n", i, qt);
     }
 
     return quantum_times;
 }
 
 static void copy_queuet_std_queue(void * node_ptr, void * std_queue_ptr) {
-    auto &q = *((std::queue<node_t *> *) std_queue_ptr);
-    auto &node = *((node_t *) node_ptr);
+    auto &q = *((std::queue<uint> *) std_queue_ptr);
+    auto node = (uint) ((long long) (node_ptr));
 
-    q.push(&node);
+    q.push(node);
 }
 
-std::vector<time_t> calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, node_t &current_node) {
-    std::queue<node_t *> q;
+static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times) {
+    assert(u != nullptr);
+    assert(u->node_id < quantum_times.size());
+    printf("<<<<<<<<<<<<<<<<<<<<<<<<<<< %d\n", u->node_id < quantum_times.size());
+
+    return quantum_times[u->node_id];
+}
+
+time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+    std::queue<uint> q;
     queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
 
-    while(!q.empty()) {
-        node_t *u = q.front(); q.pop();
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
 
+    for(int i = 0; i < sgx_table.size(); i++) {
+        printf("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times));
     }
+
+    /* **************** */
+
+    time_t starting_time = 0;
+
+    if (q.front() == current_node.node_id) {
+        return starting_time;
+    }
+
+    uint u = q.front(); q.pop();
+    starting_time += sgx_table[u]->time_left;
+
+    while(!q.empty() && sgx_table[q.front()]->node_id != current_node.node_id) {
+        u = q.front(); q.pop();
+        time_t qt = calc_qt(sgx_table[u], quantum_times);
+        starting_time += qt;
+    }
+
+    ERR("Calculated Starting time: %lu\n", starting_time);
+
+    return starting_time;
 }
 
 static int comp_address(const void *a, const void *b) {

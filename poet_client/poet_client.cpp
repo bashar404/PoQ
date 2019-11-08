@@ -496,7 +496,7 @@ int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &startin
 
     tier = calc_tier_number(*sgx_table[node_id], ntiers, sgxmax);
     quantum_time = quantum_times[tier];
-    starting_time = -1;
+    starting_time = calc_starting_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
 
     return state;
 }
