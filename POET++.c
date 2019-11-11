@@ -353,8 +353,9 @@ int main(int argc, char *argv[]) {
     ERR("********* Begins execution *********\n");
     time_t start_time = time(NULL);
     struct tm  ts;
-    ts = *localtime(&start_time);
     char buf[80];
+    ts = *localtime(&start_time);
+    strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &ts);
     ffprintf("Start time: %s\n", buf);
 
     print_sgx_table();
@@ -370,8 +371,8 @@ int main(int argc, char *argv[]) {
     int promptUser = 1;
 #endif
     time_t finish_time = time(NULL);
+    ts = *localtime(&finish_time);
     strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &ts);
-    printf("%s\n", buf);
     ffprintf("Finish time: %s\n", buf);
     ffprintf("Time difference: %lu\n", finish_time - start_time);
 
