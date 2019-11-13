@@ -53,7 +53,7 @@ queue_t *queue = nullptr;
 pthread_rwlock_t queue_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 std::vector<node_t *> sgx_table;
-pthread_rwlock_t sgx_table_lock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
 
 socket_t *server_socket = nullptr;
 
@@ -113,9 +113,9 @@ static void signal_callback_handler(int signum) {
     }
     printf("queue_lock is locked: %d\n", !queue_lock_locked);
 
-    bool sgx_table_locked = pthread_rwlock_tryrdlock(&sgx_table_lock) == 0;
+    bool sgx_table_locked = pthread_mutex_trylock(&sgx_table_lock) == 0;
     if (sgx_table_locked) {
-        pthread_rwlock_unlock(&sgx_table_lock);
+        pthread_mutex_unlock(&sgx_table_lock);
     }
     printf("sgx_table_lock is locked: %d\n", !sgx_table_locked);
     exit(SIGINT);

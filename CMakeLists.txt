@@ -6,12 +6,19 @@ set(CMAKE_CXX_STANDARD 11)
 
 include_directories(.)
 
-
+set(DEBUG OFF)
 set(SGX_HW ON)
 add_definitions(-DNO_RA)
-add_definitions(-DDEBUG)
-set(SGX_MODE PreRelease)
+
 add_definitions(-g)
+
+if (DEBUG)
+    add_definitions(-DDEBUG)
+    set(SGX_MODE Debug)
+else()
+    add_definitions(-DNDEBUG)
+    set(SGX_MODE PreRelease)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SGX REQUIRED)

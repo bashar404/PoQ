@@ -19,7 +19,7 @@ const struct timespec LOCK_TIMEOUT = {5, 0};
 extern queue_t *queue;
 extern pthread_rwlock_t queue_lock;
 extern std::vector<node_t *> sgx_table;
-extern pthread_rwlock_t sgx_table_lock;
+extern pthread_mutex_t sgx_table_lock;
 
 extern time_t current_time;
 pthread_rwlock_t current_time_lock = PTHREAD_RWLOCK_INITIALIZER;
@@ -211,12 +211,12 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
 
     bool state = true;
 
-    state = pthread_rwlock_timedrdlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+    state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
     if (state) {
         sgx_table.push_back(&node);
         assert(sgx_table.back() == &node);
         queue_push(queue, &node);
-        pthread_rwlock_unlock(&sgx_table_lock);
+        pthread_mutex_unlock(&sgx_table_lock);
         ERR("Inserted node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into the SGX table and Queue\n", node.node_id,
             node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
     } else {
@@ -297,7 +297,7 @@ static std::string get_sgx_table_str(bool lock = true) {
     bool state = true;
 
     if (lock) {
-        state = pthread_rwlock_timedrdlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+        state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
         if (!state) {
             perror("get_sgx_table_str");
         }
@@ -310,7 +310,7 @@ static std::string get_sgx_table_str(bool lock = true) {
             sgx_table_str.append(",");
             free((void *) json);
         }
-        if (lock) pthread_rwlock_unlock(&sgx_table_lock);
+        if (lock) pthread_mutex_unlock(&sgx_table_lock);
     }
 
     if (sgx_table_str.back() == ',') sgx_table_str.pop_back(); // delete the trailing comma if present
@@ -429,13 +429,13 @@ int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet
 
     bool state = true;
 
-    state = pthread_rwlock_timedrdlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+    state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
     if (!state) {
         perror("poet_get_sgxtable_and_queue");
     }
     std::string qs = state ? std::move(get_queue_str()) : "";
     std::string sgxt_str = state ? std::move(get_sgx_table_str(false)) : "";
-    if (state) pthread_rwlock_unlock(&sgx_table_lock);
+    if (state) pthread_mutex_unlock(&sgx_table_lock);
 
     char *buffer = (char *) malloc(qs.length() + sgxt_str.length() + BUFFER_SIZE);
     state = state && buffer != nullptr;
