@@ -25,7 +25,7 @@ queue_t *queue_constructor() {
         goto error;
     }
 
-    ERR("Created queue %p on thread 0x%lx\n", q, pthread_self());
+    ERRR("Created queue %p on thread 0x%lx\n", q, pthread_self());
 
     return q;
 
@@ -39,7 +39,7 @@ int queue_is_empty(queue_t *q) {
     assert(q != NULL && q->lock != NULL);
     pthread_rwlock_rdlock(q->lock);
     assert(q->head != NULL || q->head == q->tail); // if the head is NULL, then tail should be NULL as well
-    ERR("queue %p is empty: %s (size: %d)\n", q, (q != NULL && q->head == NULL ? "true" : "false"),
+    ERRR("queue %p is empty: %s (size: %d)\n", q, (q != NULL && q->head == NULL ? "true" : "false"),
         (q != NULL ? (int) q->size : 0));
     int r = q != NULL && q->head == NULL;
     pthread_rwlock_unlock(q->lock);
@@ -61,7 +61,7 @@ void *queue_front(queue_t *q) {
 
     error:
     pthread_rwlock_unlock(q->lock);
-    fprintf(stderr, "The queue %p is empty\n", q);
+    ER("The queue %p is empty\n", q);
     return NULL;
 }
 
@@ -80,7 +80,7 @@ void *queue_back(queue_t *q) {
 
     error:
     pthread_rwlock_unlock(q->lock);
-    fprintf(stderr, "The queue %p is empty\n", q);
+    ER("The queue %p is empty\n", q);
     return NULL;
 }
 
@@ -96,7 +96,7 @@ void queue_pop(queue_t *q) {
             q->tail = NULL;
             assert(q->head == NULL);
         }
-        ERR("Pops element (%p) from queue %p\n", t->d, q);
+        ERRR("Pops element (%p) from queue %p\n", t->d, q);
         free(t);
         q->size--;
     } else {
@@ -129,13 +129,13 @@ void queue_push(queue_t *q, void *d) {
 
     pthread_rwlock_unlock(q->lock);
 
-    ERR("Pushes %p into the queue %p (size: %lu)\n", d, q, q->size);
+    ERRR("Pushes %p into the queue %p (size: %lu)\n", d, q, q->size);
 
     return;
 
     error:
     pthread_rwlock_unlock(q->lock);
-    fprintf(stderr, "Could not allocate new item into queue\n");
+    E("Could not allocate new item into queue\n");
 }
 
 static void generic_print(void *d) {

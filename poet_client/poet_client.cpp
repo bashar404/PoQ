@@ -25,7 +25,7 @@
 #define DOMAIN AF_INET
 #define TYPE SOCK_STREAM
 #define PROTOCOL 0
-#define PORT 9000
+#define MAIN_PORT 9000
 #define SERVER_IP "127.0.0.1"
 
 int should_terminate = 0;
@@ -57,12 +57,12 @@ void global_variable_initialization() {
         strcpy(server_ip, SERVER_IP);
     }
 
-    node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, server_ip, PORT);
+    node_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, server_ip, MAIN_PORT);
     queue = queue_constructor();
 
     /* Initialize the enclave */
     if (initialize_enclave(&eid) < 0) {
-        fprintf(stderr, "Could not create Enclave\n");
+        E("Could not create Enclave\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -81,14 +81,14 @@ static void fill_with_rand(void *input, size_t len) {
 //    }
     sgx_status_t ret = ecall_random_bytes(eid, input, len);
     if (ret != SGX_SUCCESS) {
-        fprintf(stderr, "Something happened with the enclave :c\n");
+        E("Something happened with the enclave :c\n");
         sgx_print_error_message(ret);
         exit(EXIT_FAILURE);
     }
 }
 
 static int poet_remote_attestation_to_server() {
-    printf("Starting remote attestation ...\n");
+    INFO("Starting remote attestation ...\n");
     bool state = true;
 #ifdef NO_RA
     char *buffer = (char *) malloc(BUFFER_SIZE);
@@ -113,10 +113,10 @@ static int poet_remote_attestation_to_server() {
     json_value *json_status = find_value(json, "status");
     if (json_status == nullptr || json_status->type != json_string ||
         strcmp(json_status->u.string.ptr, "success") != 0) {
-        fprintf(stderr, "Remote attestation was not successful\n");
+        E("Remote attestation was not successful\n");
         state = false;
     } else {
-        printf("Remote attestation was successful\n");
+        INFO("Remote attestation was successful\n");
     }
 
     if (json != nullptr) {
@@ -126,7 +126,7 @@ static int poet_remote_attestation_to_server() {
 #else
 
     // TODO: Remote attestation
-    fprintf(stderr, "Remote attestation still not implemented\n");
+    E("Remote attestation still not implemented\n");
     exit(EXIT_FAILURE);
 
 #endif
@@ -138,7 +138,7 @@ static uint generate_random_sgx_time() {
     uint sgx_time = 0;
     sgx_status_t ret = ecall_random_bytes(eid, &sgx_time, sizeof(sgx_time));
     if (ret != SGX_SUCCESS) {
-        fprintf(stderr, "Something happened with the enclave :c\n");
+        E("Something happened with the enclave :c\n");
         sgx_print_error_message(ret);
         exit(EXIT_FAILURE);
     }
@@ -159,7 +159,7 @@ static int poet_register_with_pk() {
     unsigned char *pk_64base = encode_64base(&pk, sizeof(pk));
     unsigned char *sign_64base = encode_64base(&sign, sizeof(sign));
     if (pk_64base == nullptr || sign_64base == nullptr) {
-        fprintf(stderr, "failure encoding pk\n");
+        E("failure encoding pk\n");
         exit(EXIT_FAILURE);
     }
 
@@ -268,9 +268,10 @@ static int poet_register_to_server() {
 
     state = state && poet_register_with_pk();
 
-    if (state)
+    if (state) {
         ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
-               node_id);
+            node_id);
+    }
 
     state = state && poet_remote_attestation_to_server();
 
@@ -377,7 +378,7 @@ static bool get_queue_from_json(json_value *json) {
         }
 
         if (!state) {
-            fprintf(stderr, "Failed to get queue correctly\n");
+            E("Failed to get queue correctly\n");
         }
     }
 
@@ -486,7 +487,7 @@ static bool server_close_connection() {
 
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
-    printf("\nReceived signal %d\n", signum);
+    E("\nReceived signal %d\n", signum);
 }
 
 int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &starting_time) {
@@ -501,6 +502,8 @@ int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &startin
     return state;
 }
 
+
+
 int main(int argc, char *argv[]) {
     // TODO: receive parameters by command line
 
@@ -509,12 +512,17 @@ int main(int argc, char *argv[]) {
     global_variable_initialization();
 
     ERR("trying to establish connection with server\n");
-    socket_connect(node_socket);
-    ERR("Connection established\n");
+    if(socket_connect(node_socket) == 0) {
+        INFO("Connection established\n");
+    } else {
+        E("Connection not successful");
+        exit(EXIT_FAILURE);
+    }
+
 
     int state = poet_register_to_server();
     if (!state) {
-        fprintf(stderr, "Something failed ...\n");
+        E("Something failed ...\n");
     }
 
     while(!should_terminate && state) {
@@ -541,6 +549,7 @@ int main(int argc, char *argv[]) {
 
         printf("Queue: ");
         queue_print(queue);
+        printf("\n");
     }
 
     state = state && server_close_connection();

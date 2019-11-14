@@ -68,7 +68,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     if (valid) {
         buff = decode_64base(pk_str.c_str(), pk_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(public_key_t)) {
-            fprintf(stderr, "public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
+            E("public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
                     sizeof(public_key_t));
             valid = false;
         }
@@ -82,8 +82,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     if (valid) {
         buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(signature_t)) {
-            fprintf(stderr, "signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
-                    sizeof(signature_t));
+            E("signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(signature_t));
             valid = false;
         }
         memcpy(&sign, buff, sizeof(sign));
@@ -226,6 +225,8 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
     return state;
 }
 
+// TODO: remove this two methods
+
 static std::string get_arrival_times() {
     return "[]"; // TODO complete
 }
@@ -342,7 +343,7 @@ int POET_PREFIX(get_sgxtable)(json_value *json, socket_t *socket, poet_context *
 
     if (!state) {
         int node_id = (context->node != nullptr) ? (int) context->node->node_id : -1;
-        fprintf(stderr, "Could not send sgx_table to node %d.\n", node_id);
+        ER("Could not send sgx_table to node %d.\n", node_id);
     }
 
     if (buffer != nullptr) {
@@ -364,7 +365,7 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
     std::string &queue_str = *((std::string *) string_ptr);
 
     if (d == nullptr) {
-        fprintf(stderr, "Node with NULL value!!\n");
+        ER("Node with NULL value!!\n");
         return;
     }
 
@@ -412,7 +413,7 @@ int POET_PREFIX(get_queue)(json_value *json, socket_t *socket, poet_context *con
 
     if (!state) {
         uint node_id = (context->node != nullptr) ? context->node->node_id : -1;
-        fprintf(stderr, "Could not send queue to node %u, buffer length: %lu\n", node_id, strlen(buffer));
+        E("Could not send queue to node %u, buffer length: %lu\n", node_id, strlen(buffer));
     }
 
     if (buffer != nullptr) {
@@ -457,7 +458,7 @@ int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet
 
     if (!state) {
         uint node_id = (context->node != nullptr) ? context->node->node_id : -1;
-        fprintf(stderr, "Could not send queue and sgx table to node, buffer length: %lu\n", strlen(buffer));
+        E("Could not send queue and sgx table to node, buffer length: %lu\n", strlen(buffer));
     }
 
     if (buffer != nullptr) {

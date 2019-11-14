@@ -190,7 +190,7 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
     if (valread < 0) {
         if (errno == EINTR || errno == EAGAIN) goto again;
         perror("socket recv");
-        ERR( "valread: %d\n", valread);
+        ERRR( "valread: %d\n", valread);
     }
 
     return valread;
@@ -222,7 +222,7 @@ static char *concat_buffers(queue_t *queue) {
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with receiving message\n");
+    E("Fatal error, can not proceed with receiving message\n");
     if (buffer != NULL) {
         free(buffer);
     }
@@ -260,7 +260,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
         received = socket_recv(soc, current_buffer, BUFFER_SIZE);
         errsv = errno;
         if (received < 0) {
-            fprintf(stderr, "Error receiving part of the buffer, retrying...\n");
+            E("Error receiving part of the buffer, retrying...\n");
             retries++;
             if (retries < RETRIES_THRESHOLD && errsv == EAGAIN) {
                 goto retry;
@@ -270,7 +270,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
                 goto error;
             }
         } else if (received == 0) {
-            fprintf(stderr, "Error, seems that the connection is closed.\n");
+            E("Error, seems that the connection is closed.\n");
             goto error;
         }
 
@@ -290,7 +290,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with receiving message\n");
+    E("Fatal error, can not proceed with receiving message\n");
     if (*buffer != NULL) {
         free(*buffer);
     }
@@ -342,14 +342,14 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
             perror("socket send message");
             retries++;
             if (retries < RETRIES_THRESHOLD && errsv == EAGAIN) {
-                fprintf(stderr, "Error sending part of the buffer, retrying ...\n");
+                E("Error sending part of the buffer, retrying ...\n");
                 goto retry;
             } else {
-                fprintf(stderr, "Fatal error sending part of the buffer, aborting ... \n");
+                E("Fatal error sending part of the buffer, aborting ... \n");
                 goto error;
             }
         } else if (sent == 0) {
-            fprintf(stderr, "Error sending part of the buffer, seems that the connection is closed.\n");
+            E("Error sending part of the buffer, seems that the connection is closed.\n");
             goto error;
         }
         total_sent += sent;
@@ -357,12 +357,12 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
 
     sent = socket_send(soc, ENDING_STRING, strlen(ENDING_STRING));
     if (sent < strlen(ENDING_STRING)) {
-        ERR("Error sending ending of message\n");
+        E("Error sending ending of message\n");
         goto error;
     }
 //    total_sent += sent;
 
-#ifdef DEBUG
+#ifdef DEBUG2
     ERRR("Message sent: [%.*s] on socket %d\n", total_sent, buffer, soc->socket_descriptor);
     if (total_sent < buffer_len) {
         ERRR("WARNING: sent buffer is smaller than intended (%d < %lu)\n", total_sent, buffer_len);
@@ -372,7 +372,7 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     goto terminate;
 
     error:
-    fprintf(stderr, "Fatal error, can not proceed with sending message\n");
+    E("Fatal error, can not proceed with sending message\n");
     total_sent = 0;
 
     terminate:
@@ -384,13 +384,13 @@ void socket_close(socket_t *soc) {
     ERR("closing socket: %d\n", soc->socket_descriptor);
 
     if (soc->is_closed) {
-        ERR("WARNING: Trying to close an already closed socket %d\n", soc->socket_descriptor);
+        ER("Trying to close an already closed socket %d\n", soc->socket_descriptor);
         return;
     }
 
     if (close(soc->socket_descriptor) == -1) {
         perror("socket_close");
-        fprintf(stderr, "Error trying to close socket %d\n", soc->socket_descriptor);
+        E("Error trying to close socket %d\n", soc->socket_descriptor);
     }
 
     socket_t *parent = get_parent(soc);

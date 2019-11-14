@@ -1,16 +1,47 @@
 #ifndef POET_CODE_POET_COMMON_DEFINITIONS_H
 #define POET_CODE_POET_COMMON_DEFINITIONS_H
 
+/* E --> ERROR
+ * ER -> WARNING
+ * ERR -> First level DEBUG
+ * ERRR -> Second level DEBUG
+ * INFO -> Informative
+ * */
+
 #ifdef DEBUG
-#include <pthread.h>
-//#define ERR(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
-#define ERR(...) ERRR(__VA_ARGS__)
-#define ERRR(...) do {fprintf(stderr, "[0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+#define ERRR(...) do {fprintf(stderr, "DEBUG2  [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
                       fprintf(stderr, __VA_ARGS__);} while(0)
+#define DEBUG1
 #else
-#define ERR(...) /**/
 #define ERRR(...) /**/
 #endif
+
+#ifdef DEBUG1
+#define ERR(...) do {fprintf(stderr, "DEBUG1  [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+                      fprintf(stderr, __VA_ARGS__);} while(0)
+#define WARNING
+#ifndef DEBUG
+#define DEBUG
+#endif
+#else
+#define ERR(...) /**/
+#endif
+
+#ifdef WARNING
+#define ER(...) do {fprintf(stderr, "WARNING [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+                      fprintf(stderr, __VA_ARGS__);} while(0)
+#ifndef DEBUG
+#define DEBUG
+#endif
+#else
+#define ER(...) /**/
+#endif
+
+#define E(...) do {fprintf(stderr, "ERROR   [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+                      fprintf(stderr, __VA_ARGS__);} while(0)
+
+#define INFO(...) do {fprintf(stderr, "INFO    [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
+                      fprintf(stderr, __VA_ARGS__);} while(0)
 
 #ifndef __cplusplus
 # ifndef max

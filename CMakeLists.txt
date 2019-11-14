@@ -6,14 +6,28 @@ set(CMAKE_CXX_STANDARD 11)
 
 include_directories(.)
 
-set(DEBUG OFF)
+set(DEBUG 1)
 set(SGX_HW ON)
 add_definitions(-DNO_RA)
 
 add_definitions(-g)
 
 if (DEBUG)
-    add_definitions(-DDEBUG)
+    if (DEBUG STREQUAL "2")
+        add_definitions(-DDEBUG)
+        set(SGX_MODE_DEBUG 2)
+    endif()
+
+    if (DEBUG STREQUAL "1")
+        add_definitions(-DDEBUG1)
+        set(SGX_MODE_DEBUG 1)
+    endif()
+
+    if (DEBUG STREQUAL "0")
+        add_definitions(-DWARNING)
+        set(SGX_MODE_DEBUG 0)
+    endif()
+
     set(SGX_MODE Debug)
 else()
     add_definitions(-DNDEBUG)

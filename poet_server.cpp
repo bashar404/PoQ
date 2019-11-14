@@ -7,9 +7,7 @@
 #include <vector>
 
 #ifndef _WIN32
-
 #include <unistd.h>
-
 #else
 #include <Windows.h>
 #endif
@@ -33,7 +31,8 @@
 #define DOMAIN AF_INET
 #define TYPE SOCK_STREAM
 #define PROTOCOL 0
-#define PORT 9000
+#define MAIN_PORT 9000
+#define SECONDARY_PORT 9001
 #define SERVER_IP "0.0.0.0"
 
 struct thread_tuple {
@@ -49,14 +48,6 @@ queue_t *threads_queue = nullptr;
 
 /********** PoET variables **********/
 
-queue_t *queue = nullptr;
-pthread_rwlock_t queue_lock = PTHREAD_RWLOCK_INITIALIZER;
-
-std::vector<node_t *> sgx_table;
-pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
-
-socket_t *server_socket = nullptr;
-
 time_t current_time = 0;
 uint current_id = 0;
 
@@ -64,6 +55,17 @@ size_t sgxt_lowerbound;
 size_t sgxmax;
 uint n_tiers;
 
+queue_t *queue = nullptr;
+pthread_rwlock_t queue_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+std::vector<node_t *> sgx_table;
+pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
+
+pthread_cond_t sgx_table_notification_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t sgx_table_notification_cond_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+socket_t *server_socket = nullptr;
+socket_t *secondary_socket = nullptr;
 /********** PoET variables END **********/
 
 /********** GLOBAL VARIABLES END **********/
@@ -71,9 +73,10 @@ uint n_tiers;
 static void global_variables_initialization() {
     queue = queue_constructor();
     threads_queue = queue_constructor();
-    server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, PORT);
+    server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, MAIN_PORT);
+    secondary_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, SECONDARY_PORT);
 
-    if (queue == nullptr || server_socket == nullptr || threads_queue == nullptr) {
+    if (queue == nullptr || server_socket == nullptr || threads_queue == nullptr || secondary_socket == nullptr) {
         perror("queue, socket or threads_queue constructor");
         goto error;
     }
@@ -91,7 +94,7 @@ static void global_variables_initialization() {
     return;
 
     error:
-    fprintf(stderr, "Failure in global variable initialization\n");
+    E("Failure in global variable initialization\n");
     exit(EXIT_FAILURE);
 }
 
@@ -105,19 +108,19 @@ static void global_variables_destruction() {
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
 //    global_variables_destruction();
-    fprintf(stderr, "Caught signal %d\n", signum);
+    E("Caught signal %d\n", signum);
 
     bool queue_lock_locked = pthread_rwlock_tryrdlock(&queue_lock) == 0;
     if (queue_lock_locked) {
         pthread_rwlock_unlock(&queue_lock);
     }
-    printf("queue_lock is locked: %d\n", !queue_lock_locked);
+    E("queue_lock is locked: %d\n", !queue_lock_locked);
 
     bool sgx_table_locked = pthread_mutex_trylock(&sgx_table_lock) == 0;
     if (sgx_table_locked) {
         pthread_mutex_unlock(&sgx_table_lock);
     }
-    printf("sgx_table_lock is locked: %d\n", !sgx_table_locked);
+    E("sgx_table_lock is locked: %d\n", !sgx_table_locked);
     exit(SIGINT);
 }
 
@@ -159,18 +162,18 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     char *func_name = nullptr;
 
     if (!check_json_compliance(buffer, buffer_len)) {
-        fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
+        ER("JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
     json = json_parse(buffer, buffer_len);
 
     if (!check_message_integrity(json)) {
-        fprintf(stderr, "JSON format of message doesn't have a valid format for communication\n");
+        E("JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
-    ERR("JSON message is valid\n");
+    ERRR("JSON message is valid\n");
     func_name = find_value(json, "method")->u.string.ptr;
 
     for (struct function_handle *i = poet_functions; i->name != nullptr && function == nullptr; i++) {
@@ -182,7 +185,7 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     goto terminate;
 
     error:
-    fprintf(stderr, "method delegation for function '%10s...' finished with failure\n", func_name);
+    E("method delegation for function '%10s...' finished with failure\n", func_name);
     ret = false;
 
     terminate:
@@ -212,7 +215,7 @@ static void *process_new_node(void *arg) {
             buffer);
 
         if (!delegate_message(buffer, buffer_size, node_socket, &context)) {
-            fprintf(stderr, "Could not delegate message from socket %d\n", node_socket->socket_descriptor);
+            E("Could not delegate message from socket %d\n", node_socket->socket_descriptor);
             goto error;
         }
 
@@ -228,12 +231,12 @@ static void *process_new_node(void *arg) {
     }
 
     if (socket_state == 0 || node_socket->is_closed) {
-        fprintf(stderr, "Connection was closed in socket %d on thread %p(0x%lx)\n",
+        E("Connection was closed in socket %d on thread %p(0x%lx)\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread,
                 *(curr_thread->thread));
     } else {
-        fprintf(stderr, "error receiving message from socket %d on thread %p(0x%lx)\n",
+        E("error receiving message from socket %d on thread %p(0x%lx)\n",
                 node_socket->socket_descriptor,
                 curr_thread->thread,
                 *(curr_thread->thread));
@@ -262,13 +265,27 @@ void set_global_constants() {
     scanf("%u", &n_tiers);
 
     if (sgxt_lowerbound >= sgxmax || sgxt_lowerbound == 0 || sgxmax == 0) {
-        fprintf(stderr, "invalid sgxt lowerbound and upperbound\n");
+        E("invalid sgxt lowerbound and upperbound\n");
         exit(EXIT_FAILURE);
     }
 
     if (n_tiers == 0) {
-        fprintf(stderr, "invalid number of tiers\n");
+        E("invalid number of tiers\n");
         exit(EXIT_FAILURE);
+    }
+}
+
+static void *sgx_table_and_queue_notification(void * arg) {
+    bool keep_going = true;
+    while(keep_going) {
+        keep_going = pthread_mutex_lock(&sgx_table_notification_cond_mutex) == 0;
+
+        int rc = pthread_cond_wait(&sgx_table_notification_cond, &sgx_table_notification_cond_mutex);
+
+        if (rc) {
+            E("Should have reach this point\n" );
+        }
+
     }
 }
 
@@ -286,7 +303,11 @@ int main(int argc, char *argv[]) {
     if (socket_listen(server_socket, MAX_CONNECTIONS) != FALSE) {
         goto error;
     }
-    printf("Starting to listen\n");
+
+    if (socket_listen(secondary_socket, MAX_CONNECTIONS) != FALSE) {
+        goto error;
+    }
+    INFO("Starting to listen\n");
 
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_select(server_socket);
@@ -302,7 +323,7 @@ int main(int argc, char *argv[]) {
             checking = queue_is_empty(threads_queue);
             retries++;
             if (retries > THREAD_RETRIES_THRESHOLD) {
-                fprintf(stderr, "The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
+                ERR("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
                 sleep(THREAD_RETRY_WAIT);
                 retries = 0;
             }
@@ -321,7 +342,7 @@ int main(int argc, char *argv[]) {
         int error = pthread_create(next_thread, nullptr, &process_new_node, curr_thread);
         if (error != FALSE) {
             perror("thread creation");
-            fprintf(stderr, "A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
+            E("A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
             exit(EXIT_FAILURE);
         }
         /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
@@ -332,7 +353,7 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
 
     error:
-    fprintf(stderr, "server finished with error\n");
+    E("server finished with error\n");
     global_variables_destruction();
     return EXIT_FAILURE;
 }
