@@ -8,6 +8,16 @@
  * INFO -> Informative
  * */
 
+#ifndef __cplusplus
+#include <string.h>
+#include <pthread.h>
+#include <assert.h>
+#else
+#include <pthread.h>
+#include <cstring>
+#include <cassert>
+#endif
+
 #ifdef DEBUG
 #define ERRR(...) do {fprintf(stderr, "DEBUG2  [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
                       fprintf(stderr, __VA_ARGS__);} while(0)
@@ -42,6 +52,11 @@
 
 #define INFO(...) do {fprintf(stderr, "INFO    [0x%lx|%s:%3d] ", pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__); \
                       fprintf(stderr, __VA_ARGS__);} while(0)
+
+
+#define assertp(expr) do { int _val = (expr); if (!_val) { \
+                           ((!errno) ? __assert_fail (#expr, __FILE__, __LINE__, __ASSERT_FUNCTION) : __assert_perror_fail ((errno), __FILE__, __LINE__, __ASSERT_FUNCTION)); \
+                           exit(EXIT_FAILURE); } } while(0)
 
 #ifndef __cplusplus
 # ifndef max

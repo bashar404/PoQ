@@ -99,7 +99,7 @@ int socket_listen(socket_t *soc, int max_connections) {
 
     error:
     perror("socket listen");
-    return -1;
+    return ret;
 }
 
 static socket_t *get_parent(socket_t *soc) {
@@ -349,7 +349,8 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
                 goto error;
             }
         } else if (sent == 0) {
-            E("Error sending part of the buffer, seems that the connection is closed.\n");
+            E("Error sending part of the buffer, seems that the connection is closed. Closing socket ...\n");
+            socket_close(soc);
             goto error;
         }
         total_sent += sent;
@@ -365,7 +366,7 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
 #ifdef DEBUG2
     ERRR("Message sent: [%.*s] on socket %d\n", total_sent, buffer, soc->socket_descriptor);
     if (total_sent < buffer_len) {
-        ERRR("WARNING: sent buffer is smaller than intended (%d < %lu)\n", total_sent, buffer_len);
+        ER("sent buffer is smaller than intended (%d < %lu)\n", total_sent, buffer_len);
     }
 #endif
 

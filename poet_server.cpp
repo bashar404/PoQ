@@ -5,9 +5,14 @@
 #include <cassert>
 #include <csignal>
 #include <vector>
+#include <map>
 
 #ifndef _WIN32
+
 #include <unistd.h>
+#include <map>
+#include <json-parser/json.h>
+
 #else
 #include <Windows.h>
 #endif
@@ -20,11 +25,11 @@
 #include "poet_shared_functions.h"
 #include "json_checks.h"
 
+#define MAX_NODES 10000
 #define MAX_THREADS 20
 #define MAX_CONNECTIONS MAX_THREADS
 #define THREAD_RETRIES_THRESHOLD 100
 #define THREAD_RETRY_WAIT 2
-#define MAX_NODES 10000
 #define TRUE 1
 #define FALSE 0
 
@@ -35,11 +40,6 @@
 #define SECONDARY_PORT 9001
 #define SERVER_IP "0.0.0.0"
 
-struct thread_tuple {
-    pthread_t *thread;
-    void *data;
-};
-
 /********** GLOBAL VARIABLES **********/
 int should_terminate = 0;
 
@@ -49,23 +49,25 @@ queue_t *threads_queue = nullptr;
 /********** PoET variables **********/
 
 time_t current_time = 0;
-uint current_id = 0;
 
+uint current_id = 0;
 size_t sgxt_lowerbound;
 size_t sgxmax;
 uint n_tiers;
 
 queue_t *queue = nullptr;
-pthread_rwlock_t queue_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 std::vector<node_t *> sgx_table;
 pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
 
-pthread_cond_t sgx_table_notification_cond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t sgx_table_notification_cond = PTHREAD_COND_INITIALIZER; // TODO see if it is not needed
 pthread_mutex_t sgx_table_notification_cond_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 socket_t *server_socket = nullptr;
 socket_t *secondary_socket = nullptr;
+
+std::map<node_t *, socket_t *> secondary_socket_comms;
+pthread_rwlock_t secondary_socket_comms_lock = PTHREAD_RWLOCK_INITIALIZER;
 /********** PoET variables END **********/
 
 /********** GLOBAL VARIABLES END **********/
@@ -82,6 +84,10 @@ static void global_variables_initialization() {
     }
 
     if (socket_bind(server_socket) != FALSE) {
+        goto error;
+    }
+
+    if (socket_bind(secondary_socket) != FALSE) {
         goto error;
     }
 
@@ -108,19 +114,13 @@ static void global_variables_destruction() {
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
 //    global_variables_destruction();
-    E("Caught signal %d\n", signum);
-
-    bool queue_lock_locked = pthread_rwlock_tryrdlock(&queue_lock) == 0;
-    if (queue_lock_locked) {
-        pthread_rwlock_unlock(&queue_lock);
-    }
-    E("queue_lock is locked: %d\n", !queue_lock_locked);
+    INFO("Caught signal %d\n", signum);
 
     bool sgx_table_locked = pthread_mutex_trylock(&sgx_table_lock) == 0;
     if (sgx_table_locked) {
         pthread_mutex_unlock(&sgx_table_lock);
     }
-    E("sgx_table_lock is locked: %d\n", !sgx_table_locked);
+    INFO("sgx_table_lock is locked: %d\n", !sgx_table_locked);
     exit(SIGINT);
 }
 
@@ -198,7 +198,8 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
 static void *process_new_node(void *arg) {
     auto *curr_thread = (struct thread_tuple *) arg;
     auto *node_socket = (socket_t *) curr_thread->data;
-    ERR("Processing node in thread: %p(0x%lx) and socket %3d\n", curr_thread->thread, *(curr_thread->thread), node_socket->socket_descriptor);
+    ERR("Processing node in thread: %p(0x%lx) and socket %3d\n", curr_thread->thread, *(curr_thread->thread),
+        node_socket->socket_descriptor);
 
     char *buffer = nullptr;
     size_t buffer_size = 0;
@@ -232,14 +233,14 @@ static void *process_new_node(void *arg) {
 
     if (socket_state == 0 || node_socket->is_closed) {
         E("Connection was closed in socket %d on thread %p(0x%lx)\n",
-                node_socket->socket_descriptor,
-                curr_thread->thread,
-                *(curr_thread->thread));
+          node_socket->socket_descriptor,
+          curr_thread->thread,
+          *(curr_thread->thread));
     } else {
         E("error receiving message from socket %d on thread %p(0x%lx)\n",
-                node_socket->socket_descriptor,
-                curr_thread->thread,
-                *(curr_thread->thread));
+          node_socket->socket_descriptor,
+          curr_thread->thread,
+          *(curr_thread->thread));
     }
 
     error:
@@ -269,23 +270,152 @@ void set_global_constants() {
         exit(EXIT_FAILURE);
     }
 
-    if (n_tiers == 0) {
+    if (n_tiers == 0 || n_tiers > (sgxmax - sgxt_lowerbound)) {
         E("invalid number of tiers\n");
         exit(EXIT_FAILURE);
     }
 }
 
-static void *sgx_table_and_queue_notification(void * arg) {
-    bool keep_going = true;
-    while(keep_going) {
-        keep_going = pthread_mutex_lock(&sgx_table_notification_cond_mutex) == 0;
+static void *asyncronous_send_message(void *arg) {
+    auto curr_thread = (struct thread_tuple *) arg;
 
-        int rc = pthread_cond_wait(&sgx_table_notification_cond, &sgx_table_notification_cond_mutex);
+    auto ptr_lst = (void **) curr_thread->data;
+    auto socket = (socket_t *) ptr_lst[0];
+    auto buffer = (char *) ptr_lst[1];
+    auto len = (size_t) ptr_lst[2];
 
-        if (rc) {
-            E("Should have reach this point\n" );
+    ERR("Sending message to socket %d with the updated data\n", socket->socket_descriptor);
+
+    int sent = socket_send_message(socket, buffer, len);
+    if (sent <= 0) {
+        ERRR("failed to send message to secondary socket %d\n", socket->socket_descriptor);
+    }
+
+    free(ptr_lst);
+
+    queue_push(threads_queue, curr_thread->thread);
+    free(curr_thread);
+
+    pthread_exit(nullptr);
+}
+
+static void *sgx_table_and_queue_notification(void *_) {
+    int ret = 1;
+    do {
+        ret = queue_wait_change(queue); // wait until there is a change in the nodes queue
+        ERR("There was a change on the queue, sending message to all subscribers ...\n");
+        ret = 0; // ignore return status
+
+        assertp(pthread_mutex_lock(&sgx_table_lock) == 0);
+        std::string qs = std::move(get_queue_str());
+        std::string sgxt_str = std::move(get_sgx_table_str(false));
+        pthread_mutex_unlock(&sgx_table_lock);
+
+        int state = 1;
+        time_t curr_time = time(nullptr);
+
+        char *buffer = (char *) calloc(1, qs.length() + sgxt_str.length() + BUFFER_SIZE);
+        state = state && buffer != nullptr;
+        if (state) {
+            uint written = 0;
+            written += sprintf(buffer, R"({"data":{"current_time": %lu, "queue": )", time(nullptr));
+            strcat(buffer + written, qs.c_str());
+            written += qs.length();
+            strcat(buffer + written, R"(, "sgx_table": )");
+            strcat(buffer + written, sgxt_str.c_str());
+            written += sgxt_str.length();
+            strcat(buffer + written, "}}");
         }
 
+        size_t len = strlen(buffer);
+
+        if (state) {
+            assertp(pthread_rwlock_rdlock(&secondary_socket_comms_lock) == 0);
+            for (auto pair = secondary_socket_comms.begin(); pair != secondary_socket_comms.end(); pair++) {
+                auto thread = (pthread_t *) queue_front_and_pop(threads_queue);
+                auto ptr_lst = (void **) calloc(3, sizeof(void *));
+                ptr_lst[0] = (*pair).second;
+                ptr_lst[1] = buffer;
+                ptr_lst[2] = (void *) len;
+                delegate_thread_to_function(thread, (void *) ptr_lst, asyncronous_send_message);
+            }
+            pthread_rwlock_unlock(&secondary_socket_comms_lock);
+        }
+
+        free(buffer);
+    } while (ret == 0);
+
+    pthread_exit(nullptr);
+}
+
+static void *process_secondary_node_addition(void *arg) {
+    auto *curr_thread = (struct thread_tuple *) arg;
+    auto *socket = (socket_t *) curr_thread->data;
+
+    char *buffer = nullptr;
+    size_t len;
+    int state = socket_get_message(socket, (void **) &buffer, &len) > 0;
+
+    json_value *json = nullptr;
+
+    state = state && check_json_compliance(buffer, len);
+    if (state) {
+        json = json_parse(buffer, len);
+        state = json != nullptr;
+        json_value *json_nodeid = nullptr;
+        if (state) {
+            json_nodeid = find_value(json, "node_id");
+            state = json_nodeid != nullptr && json_nodeid->type == json_integer;
+        }
+
+        if (state) {
+            uint node_id = json_nodeid->u.integer;
+            if (sgx_table.size() <= node_id) { // invalid id
+                state = 0;
+            }
+            // will only add it if it is a valid id
+            if (state)  {
+                assertp(pthread_rwlock_wrlock(&secondary_socket_comms_lock) == 0);
+                secondary_socket_comms[sgx_table[node_id]] = socket;
+                pthread_rwlock_unlock(&secondary_socket_comms_lock);
+                ERR("Adds node %u into secondary socket message list on socket %d\n", node_id, socket->socket_descriptor);
+            }
+        }
+    }
+
+    if (!state) {
+        socket_close(socket);
+    }
+
+    json_value_free(json);
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    queue_push(threads_queue, curr_thread->thread);
+    free(curr_thread);
+
+    pthread_exit(nullptr);
+}
+
+/**
+ * Checks new connections on recently added nodes, it delegates to another thread so it doesn't block new connections
+ * @param _
+ * @return
+ */
+static void *secondary_socket_sentinel(void *_) {
+    ERR("Started to listen on secondary socket\n");
+    while (received_termination_signal() == FALSE) {
+        socket_t *new_socket = socket_select(secondary_socket);
+        if (new_socket == nullptr) {
+            printf(",");
+            continue;
+        }
+
+        ERR("Received new connection on secondary socket %d\n", new_socket->socket_descriptor);
+
+        auto thread = (pthread_t *) queue_front_and_pop(threads_queue);
+        delegate_thread_to_function(thread, new_socket, process_secondary_node_addition);
     }
 }
 
@@ -293,12 +423,10 @@ int main(int argc, char *argv[]) {
     // TODO: receive command line arguments for variable initialization
 
     signal(SIGINT, signal_callback_handler);
-
     global_variables_initialization();
-
     set_global_constants();
 
-    ERR("queue: %p | server_socket: %p\n", queue, server_socket);
+    ERRR("queue: %p | server_socket: %p\n", queue, server_socket);
 
     if (socket_listen(server_socket, MAX_CONNECTIONS) != FALSE) {
         goto error;
@@ -308,6 +436,17 @@ int main(int argc, char *argv[]) {
         goto error;
     }
     INFO("Starting to listen\n");
+
+    pthread_t secondary_socket_thread;
+    assertp(pthread_create(&secondary_socket_thread, nullptr, secondary_socket_sentinel, nullptr) == 0);
+    pthread_detach(secondary_socket_thread);
+
+    pthread_t sgx_table_and_queue_notification_thread;
+    assertp(pthread_create(&sgx_table_and_queue_notification_thread, nullptr, sgx_table_and_queue_notification, nullptr) == 0);
+    pthread_detach(sgx_table_and_queue_notification_thread);
+
+
+    /* ************************ */
 
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
         socket_t *new_socket = socket_select(server_socket);
@@ -323,7 +462,7 @@ int main(int argc, char *argv[]) {
             checking = queue_is_empty(threads_queue);
             retries++;
             if (retries > THREAD_RETRIES_THRESHOLD) {
-                ERR("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
+                ER("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
                 sleep(THREAD_RETRY_WAIT);
                 retries = 0;
             }
@@ -333,20 +472,13 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        auto *next_thread = (pthread_t *) queue_front(threads_queue);
-        queue_pop(threads_queue);
-        auto *curr_thread = (struct thread_tuple *) malloc(sizeof(struct thread_tuple));
-        curr_thread->thread = next_thread;
-        curr_thread->data = new_socket;
-
-        int error = pthread_create(next_thread, nullptr, &process_new_node, curr_thread);
+        auto *next_thread = (pthread_t *) queue_front_and_pop(threads_queue);
+        int error = delegate_thread_to_function(next_thread, new_socket, process_new_node);
         if (error != FALSE) {
             perror("thread creation");
             E("A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
             exit(EXIT_FAILURE);
         }
-        /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
-        pthread_detach(*next_thread);
     }
 
     global_variables_destruction();

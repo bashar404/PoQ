@@ -2,9 +2,6 @@
 extern "C" {
 #endif
 
-#include <stdlib.h>
-#include <pthread.h>
-#include <string.h>
 #include "queue_t.h"
 
 queue_t *queue_constructor() {
@@ -25,12 +22,37 @@ queue_t *queue_constructor() {
         goto error;
     }
 
+    q->cond.cond = malloc(sizeof(pthread_cond_t));
+    q->cond.cond_mutex = malloc(sizeof(pthread_mutex_t));
+    if (q->cond.cond == NULL || q->cond.cond_mutex == NULL) {
+        perror("queue constructor malloc 2");
+        goto error;
+    }
+
+    if (pthread_mutex_init(q->cond.cond_mutex, NULL) != 0) {
+        perror("queue_cond_mutex init");
+        goto error;
+    }
+
+    if (pthread_cond_init(q->cond.cond, NULL) != 0) {
+        perror("queue_cond_mutex init");
+        goto error;
+    }
+
     ERRR("Created queue %p on thread 0x%lx\n", q, pthread_self());
 
     return q;
 
     error:
+    if (q != NULL) {
+        if (q->lock != NULL) pthread_rwlock_destroy(q->lock);
+        if (q->cond.cond != NULL) pthread_cond_destroy(q->cond.cond);
+        if (q->cond.cond_mutex != NULL) pthread_mutex_destroy(q->cond.cond_mutex);
+    }
+
     if (q != NULL && q->lock != NULL) free(q->lock);
+    if (q != NULL && q->cond.cond != NULL) free(q->cond.cond);
+    if (q != NULL && q->cond.cond_mutex != NULL) free(q->cond.cond_mutex);
     if (q != NULL) free(q);
     return NULL;
 }
@@ -104,6 +126,35 @@ void queue_pop(queue_t *q) {
     }
 
     pthread_rwlock_unlock(q->lock);
+    pthread_cond_broadcast(q->cond.cond);
+}
+
+void *queue_front_and_pop(queue_t *q) {
+    assert(q != NULL && q->lock != NULL);
+
+    pthread_rwlock_wrlock(q->lock);
+
+    item_t *d = NULL;
+
+    if (q->head != NULL) {
+        item_t *t = q->head;
+        q->head = q->head->next;
+        if (t == q->tail) {
+            q->tail = NULL;
+            assert(q->head == NULL);
+        }
+        ERRR("Pops element (%p) from queue %p\n", t->d, q);
+        d = t->d;
+        free(t);
+        q->size--;
+    } else {
+        assert(q->tail == NULL);
+    }
+
+    pthread_rwlock_unlock(q->lock);
+    pthread_cond_broadcast(q->cond.cond);
+
+    return d;
 }
 
 void queue_push(queue_t *q, void *d) {
@@ -128,7 +179,7 @@ void queue_push(queue_t *q, void *d) {
     q->size++;
 
     pthread_rwlock_unlock(q->lock);
-
+    pthread_cond_broadcast(q->cond.cond);
     ERRR("Pushes %p into the queue %p (size: %lu)\n", d, q, q->size);
 
     return;
@@ -136,6 +187,21 @@ void queue_push(queue_t *q, void *d) {
     error:
     pthread_rwlock_unlock(q->lock);
     E("Could not allocate new item into queue\n");
+}
+
+int queue_wait_change(queue_t *q) {
+    int ret = 0;
+    if((ret = pthread_mutex_trylock(q->cond.cond_mutex)) == 0) {
+        ret = pthread_cond_wait(q->cond.cond, q->cond.cond_mutex);
+        if (ret) {
+            perror("queue_wait_change -> cond_wait");
+        }
+        pthread_mutex_unlock(q->cond.cond_mutex);
+    } else {
+        perror("queue_wait_change -> trylock");
+    }
+
+    return ret;
 }
 
 static void generic_print(void *d) {
@@ -200,6 +266,11 @@ void queue_destructor(queue_t *q, int deallocate) {
     }
 
     pthread_rwlock_destroy(q->lock);
+    pthread_cond_destroy(q->cond.cond);
+    pthread_mutex_destroy(q->cond.cond_mutex);
+
+    free(q->cond.cond);
+    free(q->cond.cond_mutex);
     free(q->lock);
 
     free(q);

@@ -7,6 +7,11 @@
 #include <vector>
 #include "queue_t.h"
 
+struct thread_tuple {
+    pthread_t *thread;
+    void *data;
+};
+
 /* Should return NULL if not found */
 json_value *find_value(json_value *u, const char *name);
 
@@ -16,6 +21,8 @@ std::vector<uint> calc_quantum_times(const std::vector<node_t *> &sgx_table, uin
 
 time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max);
 
+int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *));
+int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *), bool);
 
 /* *************************** For locking *************************** */
 

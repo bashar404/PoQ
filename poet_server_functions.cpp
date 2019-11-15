@@ -17,7 +17,6 @@
 const struct timespec LOCK_TIMEOUT = {5, 0};
 
 extern queue_t *queue;
-extern pthread_rwlock_t queue_lock;
 extern std::vector<node_t *> sgx_table;
 extern pthread_mutex_t sgx_table_lock;
 
@@ -129,14 +128,14 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
 
     json_value *pk_json = find_value(json, "public_key");
     if (pk_json == nullptr || pk_json->type != json_string) {
-        fprintf(stderr, "public key from node is not valid or is not present\n");
+        E("public key from node is not valid or is not present\n");
         goto error;
     }
     pk_64base = pk_json->u.string.ptr;
 
     sign_json = find_value(json, "signature");
     if (sign_json == nullptr || sign_json->type != json_string) {
-        fprintf(stderr, "signature from node is not valid or is not present\n");
+        E("signature from node is not valid or is not present\n");
         goto error;
     }
     sign_64base = sign_json->u.string.ptr;
@@ -153,7 +152,7 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
             perror("poet_register -> locks for current_id_lock and public_key_lock");
         }
     } else {
-        fprintf(stderr, "The PK or the Signature is not valid, closing connection ...\n");
+        E("The PK or the Signature is not valid, closing connection ...\n");
         valid = false;
         goto error;
     }
@@ -292,7 +291,7 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
     return state;
 }
 
-static std::string get_sgx_table_str(bool lock = true) {
+std::string get_sgx_table_str(bool lock = true) {
     std::string sgx_table_str = "[";
 
     bool state = true;
@@ -381,7 +380,7 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
     }
 }
 
-static std::string get_queue_str() {
+std::string get_queue_str() {
     std::string queue_str = "[";
 
     queue_print_func_dump(queue, print_queue_value_into_buffer, &queue_str);

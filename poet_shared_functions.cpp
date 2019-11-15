@@ -154,6 +154,25 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
     return starting_time;
 }
 
+int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *)) {
+    return delegate_thread_to_function(thread, data, func, true);
+}
+
+int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *), bool detach) {
+    assert(thread != nullptr);
+    assert(func != nullptr);
+
+    auto *curr_thread = (struct thread_tuple *) malloc(sizeof(struct thread_tuple));
+    curr_thread->thread = thread;
+    curr_thread->data = data;
+    int ret = pthread_create(thread, nullptr, func, curr_thread);
+    if (ret == 0 && detach) {
+        /* To avoid a memory leak of pthread, since there is a thread queue we dont want a pthread_join */
+        pthread_detach(*thread);
+    }
+    return ret;
+}
+
 static int comp_address(const void *a, const void *b) {
     static_assert(sizeof(long) == 8, "size of long is not 8");
     long _a = (long) a;
