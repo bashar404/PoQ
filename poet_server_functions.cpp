@@ -33,8 +33,6 @@ extern uint n_tiers;
 std::map<std::string, uint> public_keys;
 pthread_rwlock_t public_keys_lock = PTHREAD_RWLOCK_INITIALIZER;
 
-// TODO: create two functions to lock and unlock all specified locks depending on their memory address to avoid deadlocks
-
 /** Checks if Public key and Signature is valid (for now just checks if its non-zero) and is not already registered */
 static bool check_public_key_and_signature_registration(const std::string &pk_str, const std::string &sign_str,
                                                         poet_context *context) {

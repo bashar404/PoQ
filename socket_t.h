@@ -10,9 +10,6 @@ extern "C" {
 #include <netinet/in.h>
 #include "queue_t.h"
 
-#define STR1(x)  #x
-#define STR(x)  STR1(x)
-
 #define MSG_BYTES_SIZE 4
 #define MSG_BYTES_SIZE_CSTR STR(MSG_BYTES_SIZE)
 

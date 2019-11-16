@@ -76,6 +76,11 @@ socket_t *socket_constructor(int domain, int type, int protocol, const char *ip,
 int socket_bind(socket_t *soc) {
     assert(soc != NULL);
 
+    if (soc->is_closed) {
+        E("socket is closed, not binding anything ... \n");
+        return 0;
+    }
+
     int ret;
     if ((ret = bind(soc->socket_descriptor, (struct sockaddr *) &(soc->address), sizeof(soc->address))) < 0) goto error;
     return ret;
@@ -88,6 +93,11 @@ int socket_bind(socket_t *soc) {
 int socket_listen(socket_t *soc, int max_connections) {
     assert(max_connections > 0);
     assert(soc != NULL);
+
+    if (soc->is_closed) {
+        E("socket is closed, not listening anything ... \n");
+        return -1;
+    }
 
     max_connections = max(0, min(max_connections, FD_SETSIZE));
 
@@ -117,6 +127,11 @@ socket_t *socket_select(socket_t *soc) {
     assert(parent != NULL);
     struct timeval val = {5, 0};
 
+    if (soc->is_closed) {
+        E("socket is closed, not receiving anything ... \n");
+        return NULL;
+    }
+
     queue_t *q = parent->fd_set.close_queue;
     if (soc->fd_set.is_parent == 1) {
         while (!queue_is_empty(q)) {
@@ -142,6 +157,11 @@ socket_t *socket_select(socket_t *soc) {
 socket_t *socket_accept(socket_t *soc) {
     assert(soc != NULL);
 
+    if (soc->is_closed) {
+        E("socket is closed, not accepting any connection ... \n");
+        return NULL;
+    }
+
     int new_socket_fd;
     if ((new_socket_fd = accept(soc->socket_descriptor, (struct sockaddr *) &(soc->address),
                                 (socklen_t *) &(soc->addrlen))) < 0)
@@ -166,6 +186,11 @@ socket_t *socket_accept(socket_t *soc) {
 int socket_connect(socket_t *soc) {
     assert(soc != NULL);
 
+    if (soc->is_closed) {
+        E("socket is closed, not connecting to anything ... \n");
+        return -1;
+    }
+
     int ret;
     if ((ret = connect(soc->socket_descriptor, (struct sockaddr *) &(soc->address), soc->addrlen)) != 0) {
         goto error;
@@ -183,9 +208,14 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
+    if (soc->is_closed) {
+        E("socket is closed, not receiving anything ... \n");
+        return -1;
+    }
+
     int valread;
     again:
-    valread = recv(soc->socket_descriptor, buffer, buffer_len, MSG_DONTWAIT);
+    valread = recv(soc->socket_descriptor, buffer, buffer_len, MSG_DONTWAIT); // XXX: don't know if it will fail if it is waiting for something to arrive
 
     if (valread < 0) {
         if (errno == EINTR || errno == EAGAIN) goto again;
@@ -237,6 +267,11 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
     assert(buffer != NULL);
 //    assert(*buffer == NULL);
     assert(buff_size != NULL);
+
+    if (soc->is_closed) {
+        E("socket is closed, not receiving anything ... \n");
+        return -1;
+    }
 
     queue_t *buffer_queue = queue_constructor();
 
@@ -308,6 +343,11 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len) {
     assert(buffer != NULL);
     assert(buffer_len > 0);
 
+    if (soc->is_closed) {
+        E("socket is closed, not sending anything ... \n");
+        return -1;
+    }
+
     int val, errsv;
     again:
     val = send(soc->socket_descriptor, buffer, buffer_len, MSG_NOSIGNAL | MSG_DONTWAIT);
@@ -328,6 +368,10 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
     assert(buffer_len > 0);
 
     ERRR("Message to be sent: [%.*s] on socket %d\n", (int) buffer_len, buffer, soc->socket_descriptor);
+    if (soc->is_closed) {
+        E("socket is closed, not sending anything ... \n");
+        return -1;
+    }
 
     int sent, total_sent = 0;
     int retries;

@@ -1,10 +1,23 @@
 #ifndef POET_CODE_POET_SHARED_FUNCTIONS_H
 #define POET_CODE_POET_SHARED_FUNCTIONS_H
 
-#include <json-parser/json.h>
-
+#include <cassert>
+#include <cstring>
+#include <cmath>
+#include <cerrno>
+#include <queue>
+#include "queue_t.h"
+#include "general_structs.h"
 #include <cstdarg>
 #include <vector>
+#include <json-parser/json.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include <JSON-c/JSON_checker.h>
+#ifdef __cplusplus
+};
+#endif
 #include "queue_t.h"
 
 struct thread_tuple {
@@ -12,8 +25,15 @@ struct thread_tuple {
     void *data;
 };
 
-/* Should return NULL if not found */
+typedef struct {
+    pthread_cond_t cond;
+    pthread_mutex_t mutex;
+} cond_mutex_t;
+
 json_value *find_value(json_value *u, const char *name);
+/* Should return NULL if not found */
+int check_json_compliance(const char *buffer, size_t buffer_len);
+json_value * check_json_success_status(char *buffer, size_t len);
 
 int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max);
 
@@ -54,5 +74,11 @@ int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(vo
 
 int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *, ...);
 int nrwlock_unlocks(uint locks, ...);
+
+#define mutex_locks(...) nmutex_locks(PP_NARG(__VA_ARGS__) -1, __VA_ARGS__)
+#define mutex_unlocks(...) nmutex_unlocks(PP_NARG(__VA_ARGS__) -1, __VA_ARGS__)
+
+int nmutex_locks(uint locks, ...);
+int nmutex_unlocks(uint locks, ...);
 
 #endif //POET_CODE_POET_SHARED_FUNCTIONS_H

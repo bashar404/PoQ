@@ -23,7 +23,6 @@
 #include "poet_common_definitions.h"
 #include "poet_server_functions.h"
 #include "poet_shared_functions.h"
-#include "json_checks.h"
 
 #define MAX_NODES 10000
 #define MAX_THREADS 20
@@ -378,7 +377,12 @@ static void *process_secondary_node_addition(void *arg) {
                 assertp(pthread_rwlock_wrlock(&secondary_socket_comms_lock) == 0);
                 secondary_socket_comms[sgx_table[node_id]] = socket;
                 pthread_rwlock_unlock(&secondary_socket_comms_lock);
+                const char *p = R"({"status":"success"})";
+                socket_send_message(socket, (void *) p, strlen(p));
                 ERR("Adds node %u into secondary socket message list on socket %d\n", node_id, socket->socket_descriptor);
+            } else {
+                const char *p = R"({"status":"failure"})";
+                socket_send_message(socket, (void *) p, strlen(p));
             }
         }
     }

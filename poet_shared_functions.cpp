@@ -1,14 +1,33 @@
-#include <json-parser/json.h>
-
-#include <cassert>
-#include <cstring>
-#include <cmath>
-#include <cerrno>
-#include <queue>
-
-#include "queue_t.h"
-#include "general_structs.h"
 #include "poet_shared_functions.h"
+
+#define JSON_ERROR_LEN 30
+
+int check_json_compliance(const char *buffer, size_t buffer_len) {
+    assert(buffer != NULL);
+    assert(buffer_len > 0);
+
+    JSON_checker jc = new_JSON_checker(buffer_len);
+
+    int is_valid = 1;
+    for (int current_pos = 0; (current_pos < buffer_len) && (buffer[current_pos] != '\0') && is_valid; current_pos++) {
+        int next_char = buffer[current_pos];
+
+        is_valid = JSON_checker_char(jc, next_char);
+
+        if (!is_valid) {
+            ER("JSON_checker_char: syntax error\n");
+        }
+    }
+
+    is_valid = is_valid && JSON_checker_done(jc);
+    if (!is_valid) {
+        ER("JSON_checker_end: syntax error\n");
+        int len = std::min(buffer_len, (size_t) JSON_ERROR_LEN);
+        ER("JSON with invalid syntax: [%.*s]\n", len, buffer + (buffer_len - len));
+    }
+
+    return is_valid;
+}
 
 // BFS
 json_value *find_value(json_value *u, const char *name) {
@@ -52,6 +71,21 @@ json_value *find_value(json_value *u, const char *name) {
     queue_destructor(queue, 0);
 
     return r;
+}
+
+json_value * check_json_success_status(char *buffer, size_t len) {
+    int state = 1;
+    json_value *json = nullptr;
+    state = state && check_json_compliance(buffer, len);
+    if (state) {
+        json = json_parse(buffer, len);
+        json_value *status = find_value(json, "status");
+        if (status != nullptr && status->type == json_string) {
+            state = strcmp(status->u.string.ptr, "success") == 0;
+        }
+    }
+
+    return state ? json : nullptr;
 }
 
 int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max) {
@@ -222,6 +256,8 @@ int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
         }
     }
 
+    free(locks_list);
+
     errno = errv;
     return locked;
 }
@@ -244,11 +280,82 @@ int nrwlock_unlocks(uint locks, ...) {
     qsort(locks_list, locks, sizeof(pthread_rwlock_t *), comp_address);
 
     int unlocked = 1;
-    int errv = errno;
+    int errv = 0;
     for(int i = locks-1; i >= 0; i--) {
         unlocked = unlocked && pthread_rwlock_unlock(locks_list[i]) == 0;
+        errv = std::max(errno, errv);
+    }
+
+    free(locks_list);
+
+    errno = errv;
+    return unlocked;
+}
+
+int nmutex_locks(uint locks, ...) {
+    assert(locks > 0);
+    auto locks_list = (pthread_mutex_t **) calloc(locks, sizeof(pthread_mutex_t *));
+    if (locks_list == nullptr) {
+        perror("mutex_lock calloc");
+        return 0;
+    }
+
+    va_list locks_ptr;
+    va_start(locks_ptr, locks);
+    for(uint i = 0; i < locks; i++) {
+        locks_list[i] = va_arg(locks_ptr, pthread_mutex_t*);
+    }
+    va_end(locks_ptr);
+
+    /* Order according to locks's memory address */
+    qsort(locks_list, locks, sizeof(pthread_mutex_t *), comp_address);
+
+    int locked = 1;
+    int i;
+    int errv = errno;
+    for(i = 0; i < locks && locked; i++) {
+        locked = locked && pthread_mutex_lock(locks_list[i]) == 0;
         errv = errno;
     }
+
+    if (!locked) {
+        ERR("Could not lock all mutexes");
+        i--; // the last one could no be locked
+        for(; i >= 0; i--) {
+            pthread_mutex_unlock(locks_list[i]);
+        }
+    }
+
+    free(locks_list);
+
+    errno = errv;
+    return locked;
+}
+int nmutex_unlocks(uint locks, ...) {
+    assert(locks > 0);
+    auto locks_list = (pthread_mutex_t **) calloc(locks, sizeof(pthread_mutex_t *));
+    if (locks_list == nullptr) {
+        perror("nmutex_unlock calloc");
+        return 0;
+    }
+
+    va_list locks_ptr;
+    va_start(locks_ptr, locks);
+    for(int i = 0; i < locks; i++) {
+        locks_list[i] = va_arg(locks_ptr, pthread_mutex_t *);
+    }
+    va_end(locks_ptr);
+
+    qsort(locks_list, locks, sizeof(pthread_mutex_t *), comp_address);
+
+    int unlocked = 1;
+    int errv = 0;
+    for(int i = locks-1; i >= 0; i--) {
+        unlocked = unlocked && pthread_mutex_unlock(locks_list[i]) == 0;
+        errv = std::max(errno, errv);
+    }
+
+    free(locks_list);
 
     errno = errv;
     return unlocked;
