@@ -15,15 +15,15 @@ int check_json_compliance(const char *buffer, size_t buffer_len) {
         is_valid = JSON_checker_char(jc, next_char);
 
         if (!is_valid) {
-            ER("JSON_checker_char: syntax error\n");
+            WARN("JSON_checker_char: syntax error\n");
         }
     }
 
     is_valid = is_valid && JSON_checker_done(jc);
     if (!is_valid) {
-        ER("JSON_checker_end: syntax error\n");
+        WARN("JSON_checker_end: syntax error\n");
         int len = std::min(buffer_len, (size_t) JSON_ERROR_LEN);
-        ER("JSON with invalid syntax: [%.*s]\n", len, buffer + (buffer_len - len));
+        WARN("JSON with invalid syntax: [%.*s]\n", len, buffer + (buffer_len - len));
     }
 
     return is_valid;

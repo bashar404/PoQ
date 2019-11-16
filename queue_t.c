@@ -83,7 +83,7 @@ void *queue_front(queue_t *q) {
 
     error:
     pthread_rwlock_unlock(q->lock);
-    ER("The queue %p is empty\n", q);
+    WARN("The queue %p is empty\n", q);
     return NULL;
 }
 
@@ -102,7 +102,7 @@ void *queue_back(queue_t *q) {
 
     error:
     pthread_rwlock_unlock(q->lock);
-    ER("The queue %p is empty\n", q);
+    WARN("The queue %p is empty\n", q);
     return NULL;
 }
 
@@ -186,7 +186,7 @@ void queue_push(queue_t *q, void *d) {
 
     error:
     pthread_rwlock_unlock(q->lock);
-    E("Could not allocate new item into queue\n");
+    ERROR("Could not allocate new item into queue\n");
 }
 
 int queue_wait_change(queue_t *q) {

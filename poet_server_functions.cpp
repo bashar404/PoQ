@@ -65,8 +65,8 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     if (valid) {
         buff = decode_64base(pk_str.c_str(), pk_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(public_key_t)) {
-            E("public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
-                    sizeof(public_key_t));
+            ERROR("public key has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
+                  sizeof(public_key_t));
             valid = false;
         }
         memcpy(&pk, buff, sizeof(pk));
@@ -79,7 +79,7 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     if (valid) {
         buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(signature_t)) {
-            E("signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(signature_t));
+            ERROR("signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(signature_t));
             valid = false;
         }
         memcpy(&sign, buff, sizeof(sign));
@@ -126,14 +126,14 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
 
     json_value *pk_json = find_value(json, "public_key");
     if (pk_json == nullptr || pk_json->type != json_string) {
-        E("public key from node is not valid or is not present\n");
+        ERROR("public key from node is not valid or is not present\n");
         goto error;
     }
     pk_64base = pk_json->u.string.ptr;
 
     sign_json = find_value(json, "signature");
     if (sign_json == nullptr || sign_json->type != json_string) {
-        E("signature from node is not valid or is not present\n");
+        ERROR("signature from node is not valid or is not present\n");
         goto error;
     }
     sign_64base = sign_json->u.string.ptr;
@@ -150,7 +150,7 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
             perror("poet_register -> locks for current_id_lock and public_key_lock");
         }
     } else {
-        E("The PK or the Signature is not valid, closing connection ...\n");
+        ERROR("The PK or the Signature is not valid, closing connection ...\n");
         valid = false;
         goto error;
     }
@@ -340,7 +340,7 @@ int POET_PREFIX(get_sgxtable)(json_value *json, socket_t *socket, poet_context *
 
     if (!state) {
         int node_id = (context->node != nullptr) ? (int) context->node->node_id : -1;
-        ER("Could not send sgx_table to node %d.\n", node_id);
+        WARN("Could not send sgx_table to node %d.\n", node_id);
     }
 
     if (buffer != nullptr) {
@@ -362,7 +362,7 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
     std::string &queue_str = *((std::string *) string_ptr);
 
     if (d == nullptr) {
-        ER("Node with NULL value!!\n");
+        WARN("Node with NULL value!!\n");
         return;
     }
 
@@ -410,7 +410,7 @@ int POET_PREFIX(get_queue)(json_value *json, socket_t *socket, poet_context *con
 
     if (!state) {
         uint node_id = (context->node != nullptr) ? context->node->node_id : -1;
-        E("Could not send queue to node %u, buffer length: %lu\n", node_id, strlen(buffer));
+        ERROR("Could not send queue to node %u, buffer length: %lu\n", node_id, strlen(buffer));
     }
 
     if (buffer != nullptr) {
@@ -455,7 +455,7 @@ int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet
 
     if (!state) {
         uint node_id = (context->node != nullptr) ? context->node->node_id : -1;
-        E("Could not send queue and sgx table to node, buffer length: %lu\n", strlen(buffer));
+        ERROR("Could not send queue and sgx table to node, buffer length: %lu\n", strlen(buffer));
     }
 
     if (buffer != nullptr) {

@@ -81,7 +81,7 @@ void global_variable_initialization() {
 void global_variable_destructors() {
     static int llamadas = 0;
     llamadas++;
-    E("llamadas: %d\n", llamadas);
+    ERROR("llamadas: %d\n", llamadas);
     socket_destructor(node_socket);
     sgx_destroy_enclave(eid);
 }
@@ -95,7 +95,7 @@ static void fill_with_rand(void *input, size_t len) {
 //    }
     sgx_status_t ret = ecall_random_bytes(eid, input, len);
     if (ret != SGX_SUCCESS) {
-        E("Something happened with the enclave :c\n");
+        ERROR("Something happened with the enclave :c\n");
         sgx_print_error_message(ret);
         exit(EXIT_FAILURE);
     }
@@ -127,7 +127,7 @@ static int poet_remote_attestation_to_server() {
     json_value *json_status = find_value(json, "status");
     if (json_status == nullptr || json_status->type != json_string ||
         strcmp(json_status->u.string.ptr, "success") != 0) {
-        E("Remote attestation was not successful\n");
+        ERROR("Remote attestation was not successful\n");
         state = false;
     } else {
         INFO("Remote attestation was successful\n");
@@ -140,7 +140,7 @@ static int poet_remote_attestation_to_server() {
 #else
 
     // TODO: Remote attestation
-    E("Remote attestation still not implemented\n");
+    ERROR("Remote attestation still not implemented\n");
     exit(EXIT_FAILURE);
 
 #endif
@@ -152,7 +152,7 @@ static uint generate_random_sgx_time() { // TODO: change for the new version wit
     uint sgx_time = 0;
     sgx_status_t ret = ecall_random_bytes(eid, &sgx_time, sizeof(sgx_time));
     if (ret != SGX_SUCCESS) {
-        E("Something happened with the enclave :c\n");
+        ERROR("Something happened with the enclave :c\n");
         sgx_print_error_message(ret);
         exit(EXIT_FAILURE);
     }
@@ -173,7 +173,7 @@ static int poet_register_with_pk() {
     unsigned char *pk_64base = encode_64base(&pk, sizeof(pk));
     unsigned char *sign_64base = encode_64base(&sign, sizeof(sign));
     if (pk_64base == nullptr || sign_64base == nullptr) {
-        E("failure encoding pk\n");
+        ERROR("failure encoding pk\n");
         exit(EXIT_FAILURE);
     }
 
@@ -389,7 +389,7 @@ static bool get_queue_from_json(json_value *json, bool lock = true) {
         if (lock) mutex_unlocks(&queue_lock);
 
         if (!state) {
-            E("Failed to get queue correctly\n");
+            ERROR("Failed to get queue correctly\n");
         }
     }
 
@@ -495,7 +495,7 @@ static bool server_close_connection() {
 
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
-    E("\nReceived signal %d\n", signum);
+    ERROR("\nReceived signal %d\n", signum);
 }
 
 int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &starting_time) {
@@ -534,7 +534,7 @@ static void *blockchain_work(void *arg) { // thread 4
 }
 
 static void *starting_time_calculation(void *arg) { // thread 3
-    E("incomplete function\n");
+    ERROR("incomplete function\n");
 
     // TODO: calculate the starting time of this node
     time_t starting_time = 5;

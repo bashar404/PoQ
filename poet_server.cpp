@@ -99,7 +99,7 @@ static void global_variables_initialization() {
     return;
 
     error:
-    E("Failure in global variable initialization\n");
+    ERROR("Failure in global variable initialization\n");
     exit(EXIT_FAILURE);
 }
 
@@ -161,14 +161,14 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     char *func_name = nullptr;
 
     if (!check_json_compliance(buffer, buffer_len)) {
-        ER("JSON format of message doesn't have a valid format for communication\n");
+        WARN("JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
     json = json_parse(buffer, buffer_len);
 
     if (!check_message_integrity(json)) {
-        E("JSON format of message doesn't have a valid format for communication\n");
+        ERROR("JSON format of message doesn't have a valid format for communication\n");
         goto error;
     }
 
@@ -184,7 +184,7 @@ static bool delegate_message(char *buffer, size_t buffer_len, socket_t *soc, poe
     goto terminate;
 
     error:
-    E("method delegation for function '%10s...' finished with failure\n", func_name);
+    ERROR("method delegation for function '%10s...' finished with failure\n", func_name);
     ret = false;
 
     terminate:
@@ -215,7 +215,7 @@ static void *process_new_node(void *arg) {
             buffer);
 
         if (!delegate_message(buffer, buffer_size, node_socket, &context)) {
-            E("Could not delegate message from socket %d\n", node_socket->socket_descriptor);
+            ERROR("Could not delegate message from socket %d\n", node_socket->socket_descriptor);
             goto error;
         }
 
@@ -231,15 +231,15 @@ static void *process_new_node(void *arg) {
     }
 
     if (socket_state == 0 || node_socket->is_closed) {
-        E("Connection was closed in socket %d on thread %p(0x%lx)\n",
-          node_socket->socket_descriptor,
-          curr_thread->thread,
-          *(curr_thread->thread));
+        ERROR("Connection was closed in socket %d on thread %p(0x%lx)\n",
+              node_socket->socket_descriptor,
+              curr_thread->thread,
+              *(curr_thread->thread));
     } else {
-        E("error receiving message from socket %d on thread %p(0x%lx)\n",
-          node_socket->socket_descriptor,
-          curr_thread->thread,
-          *(curr_thread->thread));
+        ERROR("error receiving message from socket %d on thread %p(0x%lx)\n",
+              node_socket->socket_descriptor,
+              curr_thread->thread,
+              *(curr_thread->thread));
     }
 
     error:
@@ -265,12 +265,12 @@ void set_global_constants() {
     scanf("%u", &n_tiers);
 
     if (sgxt_lowerbound >= sgxmax || sgxt_lowerbound == 0 || sgxmax == 0) {
-        E("invalid sgxt lowerbound and upperbound\n");
+        ERROR("invalid sgxt lowerbound and upperbound\n");
         exit(EXIT_FAILURE);
     }
 
     if (n_tiers == 0 || n_tiers > (sgxmax - sgxt_lowerbound)) {
-        E("invalid number of tiers\n");
+        ERROR("invalid number of tiers\n");
         exit(EXIT_FAILURE);
     }
 }
@@ -466,7 +466,7 @@ int main(int argc, char *argv[]) {
             checking = queue_is_empty(threads_queue);
             retries++;
             if (retries > THREAD_RETRIES_THRESHOLD) {
-                ER("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
+                WARN("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
                 sleep(THREAD_RETRY_WAIT);
                 retries = 0;
             }
@@ -480,7 +480,7 @@ int main(int argc, char *argv[]) {
         int error = delegate_thread_to_function(next_thread, new_socket, process_new_node);
         if (error != FALSE) {
             perror("thread creation");
-            E("A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
+            ERROR("A thread could not be created: %p(0x%lx) (error code: %d)\n", next_thread, *next_thread, error);
             exit(EXIT_FAILURE);
         }
     }
@@ -489,7 +489,7 @@ int main(int argc, char *argv[]) {
     return EXIT_SUCCESS;
 
     error:
-    E("server finished with error\n");
+    ERROR("server finished with error\n");
     global_variables_destruction();
     return EXIT_FAILURE;
 }

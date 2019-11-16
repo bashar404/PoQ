@@ -1,8 +1,8 @@
 #ifndef POET_CODE_POET_COMMON_DEFINITIONS_H
 #define POET_CODE_POET_COMMON_DEFINITIONS_H
 
-/* E --> ERROR
- * ER -> WARNING
+/* ERROR --> ERROR
+ * WARN -> WARNING
  * ERR -> First level DEBUG
  * ERRR -> Second level DEBUG
  * INFO -> Informative
@@ -41,15 +41,15 @@
 #endif
 
 #ifdef WARNING
-#define ER(...) __STDERR_MSG("WARNING",  __VA_ARGS__)
+#define WARN(...) __STDERR_MSG("WARNING",  __VA_ARGS__)
 #ifndef DEBUG
 #define DEBUG
 #endif
 #else
-#define ER(...) /**/
+#define WARN(...) /**/
 #endif
 
-#define E(...) __STDERR_MSG("ERROR  ",  __VA_ARGS__)
+#define ERROR(...) __STDERR_MSG("ERROR  ",  __VA_ARGS__)
 
 #define INFO(...) __STDERR_MSG("INFO   ", __VA_ARGS__)
 
