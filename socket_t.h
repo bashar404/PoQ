@@ -42,19 +42,23 @@ int socket_bind(socket_t *soc);
 
 int socket_listen(socket_t *soc, int max_connections);
 
-socket_t *socket_select(socket_t *soc);
+int socket_select(socket_t *soc);
 
 socket_t *socket_accept(socket_t *soc);
 
 int socket_connect(socket_t *soc);
 
-int socket_recv(socket_t *soc, void *buffer, int buffer_len);
+int socket_recv(socket_t *soc, void *buffer, int buffer_len, int flags);
 
 int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size);
 
-int socket_send(socket_t *soc, const void *buffer, size_t buffer_len);
+int socket_get_message_custom(socket_t *soc, void **buffer, size_t *buff_size, int flags);
+
+int socket_send(socket_t *soc, const void *buffer, size_t buffer_len, int flags);
 
 int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len);
+
+int socket_send_message_custom(socket_t *soc, void *buffer, size_t buff_size, int flags);
 
 void socket_close(socket_t *soc);
 

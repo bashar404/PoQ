@@ -65,7 +65,7 @@ pthread_mutex_t sgx_table_notification_cond_mutex = PTHREAD_MUTEX_INITIALIZER;
 socket_t *server_socket = nullptr;
 socket_t *secondary_socket = nullptr;
 
-std::map<node_t *, socket_t *> secondary_socket_comms;
+std::map<uint, socket_t *> secondary_socket_comms;
 pthread_rwlock_t secondary_socket_comms_lock = PTHREAD_RWLOCK_INITIALIZER;
 /********** PoET variables END **********/
 
@@ -283,11 +283,11 @@ static void *asyncronous_send_message(void *arg) {
     auto buffer = (char *) ptr_lst[1];
     auto len = (size_t) ptr_lst[2];
 
-    ERR("Sending message to socket %d with the updated data\n", socket->socket_descriptor);
+    ERR("Sending message to socket %d with the updated data: [%.*s]\n", socket->socket_descriptor, std::min(45, (int)len), buffer);
 
     int sent = socket_send_message(socket, buffer, len);
     if (sent <= 0) {
-        ERRR("failed to send message to secondary socket %d\n", socket->socket_descriptor);
+        ERROR("failed to send message to secondary socket %d\n", socket->socket_descriptor);
     }
 
     free(ptr_lst);
@@ -329,6 +329,8 @@ static void *sgx_table_and_queue_notification(void *_) {
         size_t len = strlen(buffer);
 
         if (state) {
+            std::queue<pthread_t *> q;
+
             assertp(pthread_rwlock_rdlock(&secondary_socket_comms_lock) == 0);
             for (auto pair = secondary_socket_comms.begin(); pair != secondary_socket_comms.end(); pair++) {
                 auto thread = (pthread_t *) queue_front_and_pop(threads_queue);
@@ -336,9 +338,15 @@ static void *sgx_table_and_queue_notification(void *_) {
                 ptr_lst[0] = (*pair).second;
                 ptr_lst[1] = buffer;
                 ptr_lst[2] = (void *) len;
-                delegate_thread_to_function(thread, (void *) ptr_lst, asyncronous_send_message);
+                delegate_thread_to_function(thread, (void *) ptr_lst, asyncronous_send_message, false);
+                q.push(thread);
             }
             pthread_rwlock_unlock(&secondary_socket_comms_lock);
+
+            while(!q.empty()) {
+                pthread_join(*q.front(), nullptr);
+                q.pop();
+            }
         }
 
         free(buffer);
@@ -369,13 +377,14 @@ static void *process_secondary_node_addition(void *arg) {
 
         if (state) {
             uint node_id = json_nodeid->u.integer;
-            if (sgx_table.size() <= node_id) { // invalid id
+            if (current_id <= node_id) { // invalid id
+                ERR("invalid node id: (current_id) %u <= (node_id) %u\n", current_id, node_id);
                 state = 0;
             }
             // will only add it if it is a valid id
             if (state)  {
                 assertp(pthread_rwlock_wrlock(&secondary_socket_comms_lock) == 0);
-                secondary_socket_comms[sgx_table[node_id]] = socket;
+                secondary_socket_comms[node_id] = socket;
                 pthread_rwlock_unlock(&secondary_socket_comms_lock);
                 const char *p = R"({"status":"success"})";
                 socket_send_message(socket, (void *) p, strlen(p));
@@ -410,11 +419,13 @@ static void *process_secondary_node_addition(void *arg) {
 static void *secondary_socket_sentinel(void *_) {
     ERR("Started to listen on secondary socket\n");
     while (received_termination_signal() == FALSE) {
-        socket_t *new_socket = socket_select(secondary_socket);
-        if (new_socket == nullptr) {
+        int state = socket_select(secondary_socket);
+        if (!state) {
             printf(",");
             continue;
         }
+
+        socket_t *new_socket = socket_accept(secondary_socket);
 
         ERR("Received new connection on secondary socket %d\n", new_socket->socket_descriptor);
 
@@ -453,11 +464,13 @@ int main(int argc, char *argv[]) {
     /* ************************ */
 
     while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
-        socket_t *new_socket = socket_select(server_socket);
-        if (new_socket == nullptr) {
+        int state = socket_select(server_socket);
+        if (!state) {
             printf(".");
             continue;
         }
+
+        socket_t *new_socket = socket_accept(server_socket);
 
         // FIXME: Figure out a way to eliminate active waiting in here
         bool checking;

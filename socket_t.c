@@ -22,12 +22,15 @@ extern "C" {
 
 #include "poet_common_definitions.h"
 
+#define SELECT_TIMEOUT {5,0} /* 5 seconds */
 #define RETRIES_THRESHOLD 10
 #define ENDING_CHARACTER '\0'
 #define ENDING_STRING "\r\n"
 
 #include "socket_t.h"
 #include "queue_t.h"
+
+#define ERROR(...) /**/
 
 #define DEFAULT_ADDRESS INADDR_ANY
 
@@ -121,15 +124,15 @@ static socket_t *get_parent(socket_t *soc) {
     return soc;
 }
 
-socket_t *socket_select(socket_t *soc) {
+int socket_select_parent(socket_t *soc) {
     assert(soc != NULL);
     socket_t *parent = get_parent(soc);
     assert(parent != NULL);
-    struct timeval val = {5, 0};
+    struct timeval val = SELECT_TIMEOUT;
 
     if (soc->is_closed) {
         ERROR("socket is closed, not receiving anything ... \n");
-        return NULL;
+        return 0;
     }
 
     queue_t *q = parent->fd_set.close_queue;
@@ -141,17 +144,36 @@ socket_t *socket_select(socket_t *soc) {
         }
     }
 
+    int errsv = 0;
+    struct timeval tmp;
+    int status = 1;
+
+    retry:
+    tmp = val;
     fd_set read_fd_set = parent->fd_set.data.set;
-    if (select(parent->socket_descriptor+1, &read_fd_set, NULL, NULL, &val) < 0) {
+    if (select(parent->socket_descriptor+1, &read_fd_set, NULL, NULL, &tmp) < 0) {
+        errsv = errno;
         perror("select");
-        exit(EXIT_FAILURE);
+        status = 0;
     }
 
-    if (FD_ISSET(parent->socket_descriptor, &parent->fd_set.data.set)) {
-        return socket_accept(parent);
+    if (status) {
+        if (FD_ISSET(parent->socket_descriptor, &parent->fd_set.data.set)) {
+            errno = errsv;
+            status = 1;
+        } else {
+            ERR("select timeout on socket %d reached, retrying ...\n", soc->socket_descriptor);
+            goto retry;
+        }
     }
 
-    return NULL;
+    errno = errsv;
+    return status;
+}
+
+int socket_select(socket_t *soc) {
+    assert(soc != NULL);
+    return socket_select_parent(soc);
 }
 
 socket_t *socket_accept(socket_t *soc) {
@@ -203,7 +225,7 @@ int socket_connect(socket_t *soc) {
     return ret;
 }
 
-int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
+int socket_recv(socket_t *soc, void *buffer, int buffer_len, int flags) {
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
@@ -213,16 +235,30 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len) {
         return -1;
     }
 
+    int errsv = 0;
     int valread;
+    int empty_queue = 0;
     again:
-    valread = recv(soc->socket_descriptor, buffer, buffer_len, MSG_DONTWAIT); // XXX: don't know if it will fail if it is waiting for something to arrive
+    valread = recv(soc->socket_descriptor, buffer, buffer_len, flags);
 
-    if (valread < 0) {
-        if (errno == EINTR || errno == EAGAIN) goto again;
+    if (valread < 0 && !empty_queue) {
+        ERRR("first try on getting data is unsuccessfull\n");
+        errsv = errno;
         perror("socket recv");
+        if (errsv == EINTR || errsv == EAGAIN) {
+            empty_queue = 1;
+            ERR("seems that there is no data available on the recv queue, waiting for a change in the socket %d descriptor ...\n", soc->socket_descriptor);
+            int s = socket_select(soc);
+            if (!s) {
+                errsv = errno;
+                perror("socket_recv -> select");
+            }
+            goto again;
+        }
         ERRR( "valread: %d\n", valread);
     }
 
+    errno = errsv;
     return valread;
 }
 
@@ -262,7 +298,7 @@ static char *concat_buffers(queue_t *queue) {
     return buffer;
 }
 
-int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
+int socket_get_message_custom(socket_t *soc, void **buffer, size_t *buff_size, int flags) {
     assert(soc != NULL);
     assert(buffer != NULL);
 //    assert(*buffer == NULL);
@@ -292,7 +328,7 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
 
         retries = 0;
         retry:
-        received = socket_recv(soc, current_buffer, BUFFER_SIZE);
+        received = socket_recv(soc, current_buffer, BUFFER_SIZE, flags);
         errsv = errno;
         if (received < 0) {
             ERROR("Error receiving part of the buffer, retrying...\n");
@@ -338,7 +374,11 @@ int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
     return current_size;
 }
 
-int socket_send(socket_t *soc, const void *buffer, size_t buffer_len) {
+int socket_get_message(socket_t *soc, void **buffer, size_t *buff_size) {
+    return socket_get_message_custom(soc, buffer, buff_size, MSG_DONTWAIT & 0);
+}
+
+int socket_send(socket_t *soc, const void *buffer, size_t buffer_len, int flags) {
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
@@ -350,7 +390,7 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len) {
 
     int val, errsv;
     again:
-    val = send(soc->socket_descriptor, buffer, buffer_len, MSG_NOSIGNAL | MSG_DONTWAIT);
+    val = send(soc->socket_descriptor, buffer, buffer_len, MSG_NOSIGNAL | flags);
     errsv = errno;
 
     if (val <= 0) {
@@ -362,7 +402,7 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len) {
     return val;
 }
 
-int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
+int socket_send_message_custom(socket_t *soc, void *buffer, size_t buffer_len, int flags) {
     assert(soc != NULL);
     assert(buffer != NULL);
     assert(buffer_len > 0);
@@ -380,7 +420,7 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
         retries = 0;
 
         retry:
-        sent = socket_send(soc, buffer + total_sent, min(buffer_len - total_sent, BUFFER_SIZE));
+        sent = socket_send(soc, buffer + total_sent, min(buffer_len - total_sent, BUFFER_SIZE), flags);
         errsv = errno;
         if (sent < 0) {
             perror("socket send message");
@@ -400,7 +440,7 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
         total_sent += sent;
     } while (total_sent < buffer_len && retries < RETRIES_THRESHOLD);
 
-    sent = socket_send(soc, ENDING_STRING, strlen(ENDING_STRING));
+    sent = socket_send(soc, ENDING_STRING, strlen(ENDING_STRING), flags);
     if (sent < strlen(ENDING_STRING)) {
         ERROR("Error sending ending of message\n");
         goto error;
@@ -422,6 +462,10 @@ int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
 
     terminate:
     return total_sent;
+}
+
+int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
+    return socket_send_message_custom(soc, buffer, buffer_len, MSG_DONTWAIT);
 }
 
 void socket_close(socket_t *soc) {

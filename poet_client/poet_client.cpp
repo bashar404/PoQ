@@ -59,6 +59,8 @@ pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
 queue_t *queue;
 pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 
+cond_mutex_t tmp = {PTHREAD_COND_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+
 void global_variable_initialization() {
     server_ip = (char *) malloc(18);
     printf("Set the ip address to communicate (-1 for 127.0.0.1): ");
@@ -79,9 +81,6 @@ void global_variable_initialization() {
 }
 
 void global_variable_destructors() {
-    static int llamadas = 0;
-    llamadas++;
-    ERROR("llamadas: %d\n", llamadas);
     socket_destructor(node_socket);
     sgx_destroy_enclave(eid);
 }
@@ -409,6 +408,8 @@ static bool update_sgx_table_and_queue_from_txt(char *buffer, size_t len) {
         mutex_unlocks(&sgx_table_lock, &queue_lock);
     }
 
+    ERR("sgx table and queue was updated: %d\n", state);
+
     return state;
 }
 
@@ -530,6 +531,8 @@ static void *blockchain_work(void *arg) { // thread 4
 
     fclose(f);
 
+    pthread_cond_signal(&tmp.cond);
+
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 }
 
@@ -537,7 +540,9 @@ static void *starting_time_calculation(void *arg) { // thread 3
     ERROR("incomplete function\n");
 
     // TODO: calculate the starting time of this node
-    time_t starting_time = 5;
+    uint quantum_time, tier, starting_time;
+    calculate_necessary_parameters(quantum_time, tier, starting_time);
+    printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
 
     sleep(starting_time);
 
@@ -556,10 +561,16 @@ void *notifications_sentinel(void * _) { // thread 2
     size_t len;
     while (should_terminate == 0) {
         int valread = socket_get_message(subscribe_socket, (void **)&buffer, &len);
+        if (valread < 0) {
+            ERRR("Empty message from secondary socket\n");
+            continue;
+        }
+
+        ERR("Broadcast message received in node %d\n", node_id);
 
         int r = pthread_cancel(starting_time_calculation_thread);
         int errsv = errno;
-        if (r) ERR("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread), strerror(errsv), errsv);
+        if (r) {ERRR("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread), strerror(errsv), errsv);}
 
         bool updated = false;
         if (buffer != nullptr) updated = update_sgx_table_and_queue_from_txt(buffer, len);
@@ -568,8 +579,11 @@ void *notifications_sentinel(void * _) { // thread 2
         buffer = nullptr;
         len = 0;
 
-        if ((!r || errsv == ESRCH) && updated) {
+        if (updated) {
+            ERR("Calling starting time calculation function\n");
             assertp(pthread_create(&starting_time_calculation_thread, nullptr, starting_time_calculation, nullptr) == 0);
+        } else {
+            ERR("starting time calculation function is NOT being called\n");
         }
     }
 
@@ -602,7 +616,8 @@ int main(int argc, char *argv[]) {
         buffer = nullptr;
         size_t len;
         assertp(socket_get_message(subscribe_socket, (void **) &buffer, &len) > 0);
-
+        ERR("Server responded with: '%s'\n", buffer);
+        free(buffer);
     } while(false);
 
     pthread_t notifications_checker_thread;
@@ -611,14 +626,14 @@ int main(int argc, char *argv[]) {
 
     while(!should_terminate && state) {
         state = poet_broadcast_sgxtime();
-        if (state) {
-            get_queue_and_sgx_table();
-            uint quantum_time, tier, starting_time;
-            calculate_necessary_parameters(quantum_time, tier, starting_time);
-            printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
+//        if (state) {
+//            get_queue_and_sgx_table();
+//
+//
+//            // TODO finish
+//        }
 
-            // TODO finish
-        }
+        pthread_cond_wait(&tmp.cond, &tmp.mutex);
 
         should_terminate = 1;
     }
