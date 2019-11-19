@@ -39,6 +39,7 @@ int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max);
 
 std::vector<uint> calc_quantum_times(const std::vector<node_t *> &sgx_table, uint ntiers, uint sgx_max);
 
+time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max);
 time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max);
 
 int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *));

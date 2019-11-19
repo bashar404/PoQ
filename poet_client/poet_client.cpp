@@ -316,6 +316,7 @@ static bool get_sgx_table_from_json(json_value *json, bool lock = true) {
         if (lock) assertp(mutex_locks(&sgx_table_lock));
 
         for(auto it = sgx_table.begin(); it != sgx_table.end(); it++) {
+            assert(*it != nullptr);
             delete *it;
         }
         sgx_table.clear();
@@ -541,16 +542,24 @@ static void *starting_time_calculation(void *arg) { // thread 3
 
     // TODO: calculate the starting time of this node
     uint quantum_time, tier, starting_time;
+    assertp(mutex_locks(&sgx_table_lock, &queue_lock));
     calculate_necessary_parameters(quantum_time, tier, starting_time);
     printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
 
-    sleep(starting_time);
+    time_t leadership_time = calc_leadership_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
+    mutex_unlocks(&sgx_table_lock, &queue_lock);
+
+    INFO("Leadership time: %lu\n", leadership_time);
+
+    sleep(leadership_time);
 
     int oldstate;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
     pthread_create(&blockchain_writer_thread, nullptr, blockchain_work, (void *) (BLOCKCHAIN_WRITE_TIME));
     pthread_detach(blockchain_writer_thread);
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
+
+    INFO("Started blockchain write job at: %s (%lu)\n", time(nullptr));
 
     pthread_exit(nullptr);
 }
@@ -633,7 +642,9 @@ int main(int argc, char *argv[]) {
 //            // TODO finish
 //        }
 
-        pthread_cond_wait(&tmp.cond, &tmp.mutex);
+        assertp(pthread_mutex_lock(&tmp.mutex) == 0);
+        assertp(pthread_cond_wait(&tmp.cond, &tmp.mutex) == 0);
+        pthread_mutex_unlock(&tmp.mutex);
 
         should_terminate = 1;
     }

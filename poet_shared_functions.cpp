@@ -139,7 +139,61 @@ static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntie
     return quantum_times[tier];
 }
 
+static uint remaining_quantum_time(const std::vector<uint> &quantum_times, const node_t &node, int reps, uint tiers, uint sgx_max) {
+    assert(reps >= 0);
+    uint r = 0;
+    uint tier = calc_tier_number(node, tiers, sgx_max);
+    uint quantum_time = quantum_times[tier];
+    uint sgx_time = node.sgx_time;
+    assert(reps * quantum_time <= sgx_time);
+    r = std::min(quantum_time, std::max(sgx_time - reps * quantum_time, r));
+    return r;
+}
+
+time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max) {
+    assert(queue != nullptr);
+    std::queue<uint> q;
+    queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
+
+    /* **************** */
+
+    std::vector<uint> quantum_t_repetitions(sgx_table.size(), 0);
+    std::vector<uint> quantum_times = calc_quantum_times(sgx_table, tiers, sgx_max);
+
+    time_t accumulated_time = 0;
+
+    int remaining_time = current_node.time_left;
+    while(!q.empty() && remaining_time > 0) {
+        uint u = q.front(); q.pop();
+        ERR("Processing node %d\n", u);
+        assert(0 <= u && u < sgx_table.size());
+        assert(sgx_table[u] != nullptr);
+
+        uint qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u]++, tiers, sgx_max);
+        ERR("Remaining quantum time (node %d): %u\n", u, qt);
+        assert(qt >= 0);
+        accumulated_time += qt;
+        if (u == current_node.node_id) {
+            remaining_time -= qt;
+            assert(remaining_time >= 0);
+        }
+    }
+
+    assert(remaining_time == 0);
+    return accumulated_time;
+}
+
+std::vector<time_t> calc_starting_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+    std::vector<time_t> starting_times;
+
+    // TODO complete if it is necessary
+
+    return starting_times;
+}
+
+/* TODO should rather be all the starting times of the current node */
 time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+    assert(queue != nullptr);
     std::queue<uint> q;
     queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
 
@@ -159,7 +213,7 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
 
     uint u = q.front(); q.pop();
 
-    uint lowest_at = 0; // TODO: change to -1
+    uint lowest_at = -1;
     for(int i = 0; i < sgx_table.size(); i++) {
         lowest_at = std::min(lowest_at, sgx_table[i]->arrival_time);
     }
@@ -171,7 +225,7 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
     for(int i = 0; i < sgx_table.size(); i++) {
         int tier = calc_tier_number(*sgx_table[i], ntiers, sgx_max);
         accumulate_tier_qt += (tier == u_tier ? sgx_table[i]->time_left : 0);
-        count_lowest_at += (tier == u_tier ? (lowest_at == sgx_table[i]->arrival_time || 1) : 0); // TODO change (remove || 1)
+        count_lowest_at += (tier == u_tier ? (lowest_at == sgx_table[i]->arrival_time) : 0);
     }
 
     uint tier_qt = (uint) ceilf(accumulate_tier_qt / (float) (count_lowest_at * count_lowest_at));

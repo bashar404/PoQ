@@ -42,6 +42,12 @@ add_executable(poet_main
         json-parser/json.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 target_link_libraries(poet_main m pthread)
 
+add_executable(poet_test
+        poet_methods_test.cpp
+        socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp poet_shared_functions.cpp
+        json-parser/json.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
+target_link_libraries(poet_test m pthread)
+
 # --------------- CLIENT ---------------------
 
 set(EDL_SEARCH_PATHS poet_client/enclave)

@@ -463,7 +463,7 @@ int main(int argc, char *argv[]) {
 
     /* ************************ */
 
-    while (received_termination_signal() == FALSE) { // TODO: change condition to an OS signal
+    while (received_termination_signal() == FALSE) {
         int state = socket_select(server_socket);
         if (!state) {
             printf(".");
@@ -472,18 +472,10 @@ int main(int argc, char *argv[]) {
 
         socket_t *new_socket = socket_accept(server_socket);
 
-        // FIXME: Figure out a way to eliminate active waiting in here
-        bool checking;
-        uint retries = 0;
-        do {
-            checking = queue_is_empty(threads_queue);
-            retries++;
-            if (retries > THREAD_RETRIES_THRESHOLD) {
-                WARN("The thread queue is full, waiting %d seconds\n", THREAD_RETRY_WAIT);
-                sleep(THREAD_RETRY_WAIT);
-                retries = 0;
-            }
-        } while (checking && received_termination_signal() == FALSE);
+        while(queue_is_empty(threads_queue)) {
+            WARN("The thread queue is empty, waiting until a thread finishes and gets added again into the queue.\n");
+            queue_wait_change_timed(threads_queue, {1, 0});
+        }
 
         if (received_termination_signal() != FALSE) {
             break;

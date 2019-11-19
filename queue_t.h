@@ -39,6 +39,7 @@ void queue_pop(queue_t *q);
 void *queue_front_and_pop(queue_t *q);
 void queue_push(queue_t *q, void *d);
 int queue_wait_change(queue_t *q);
+int queue_wait_change_timed(queue_t *q, struct timespec time);
 void queue_print(queue_t *q);
 void queue_print_func(queue_t *q, void (*)(void *));
 void queue_print_func_dump(queue_t *q, void (*)(void *, void *), void *);

@@ -204,6 +204,22 @@ int queue_wait_change(queue_t *q) {
     return ret;
 }
 
+int queue_wait_change_timed(queue_t *q, struct timespec time) {
+    int ret = 0;
+    struct timespec waittime = time;
+    if((ret = pthread_mutex_trylock(q->cond.cond_mutex)) == 0) {
+        ret = pthread_cond_timedwait(q->cond.cond, q->cond.cond_mutex, &waittime);
+        if (ret) {
+            perror("queue_wait_change_timed -> cond_wait");
+        }
+        pthread_mutex_unlock(q->cond.cond_mutex);
+    } else {
+        perror("queue_wait_change -> trylock");
+    }
+
+    return ret;
+}
+
 static void generic_print(void *d) {
     printf("[%u]", (unsigned int) d);
 }
@@ -217,11 +233,6 @@ void queue_print_func(queue_t *q, void (*print_func)(void *)) {
     assert(q != NULL);
     assert(print_func != NULL);
 
-    if (queue_is_empty(q)) {
-        print_func(NULL);
-        return;
-    }
-
     pthread_rwlock_rdlock(q->lock);
     for (item_t *i = q->head; i != NULL; i = i->next) {
         print_func(i->d);
@@ -232,11 +243,6 @@ void queue_print_func(queue_t *q, void (*print_func)(void *)) {
 void queue_print_func_dump(queue_t *q, void (*print_func)(void *, void *), void *dest) {
     assert(q != NULL);
     assert(print_func != NULL);
-
-    if (queue_is_empty(q)) {
-        print_func(NULL, dest);
-        return;
-    }
 
     pthread_rwlock_rdlock(q->lock);
     for (item_t *i = q->head; i != NULL; i = i->next) {
