@@ -1,6 +1,11 @@
 #ifndef POET_CODE_GENERAL_STRUCTS_H
 #define POET_CODE_GENERAL_STRUCTS_H
 
+#include <vector>
+#include <map>
+#include "queue_t.h"
+#include "socket_t.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,6 +45,27 @@ struct poet_context {
     node_t *node;
     public_key_t *public_key;
     signature_t *signature;
+};
+
+struct global {
+    time_t server_starting_time = 0;
+
+    uint current_id = 0;
+    pthread_mutex_t current_id_lock = PTHREAD_MUTEX_INITIALIZER;
+    size_t sgxt_lowerbound = 0;
+    size_t sgxmax = 0;
+    uint n_tiers = 0;
+
+    queue_t *queue = nullptr;
+
+    std::vector<node_t *> sgx_table;
+    pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
+
+    socket_t *server_socket = nullptr;
+    socket_t *secondary_socket = nullptr;
+
+    std::map<uint, socket_t *> secondary_socket_comms;
+    pthread_rwlock_t secondary_socket_comms_lock = PTHREAD_RWLOCK_INITIALIZER;
 };
 
 const char *node_t_to_json(const node_t *);

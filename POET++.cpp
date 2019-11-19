@@ -2,14 +2,14 @@
  * FILENAME : SGX1.c
  * ORGANIZATION : ISPM Research Lab
  *H*/
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
-#include <ctype.h>
-#include <string.h>
-#include <time.h>
-#include <assert.h>
-#include <signal.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <cctype>
+#include <cstring>
+#include <ctime>
+#include <cassert>
+#include <csignal>
 
 #include "poet_common_definitions.h"
 
@@ -41,8 +41,8 @@ static int calc_tier_number(node_t *node);
 
 uint randint(int start, int end) {
     assert(start <= end);
-    start = max(0, min(start, RAND_MAX));
-    end = max(0, min(end, RAND_MAX));
+    start = std::max(0, std::min(start, RAND_MAX));
+    end = std::max(0, std::min(end, RAND_MAX));
 
     return end > 0 ? start + rand() % end : 0;
 }
@@ -51,7 +51,7 @@ void get_input_from_user(int prompt) {
     if (prompt) printf("Seed for pseudo-random number generator (-1 for random): ");
     int seed;
     scanf("%d", &seed);
-    seed = seed >= 0 ? max(0,seed) : (int) time(NULL);
+    seed = seed >= 0 ? std::max(0,seed) : (int) time(NULL);
     srand(seed);
 
     printf("Max number of iterations (-1 for infinite): ");
@@ -140,7 +140,7 @@ int is_time_left() {
         if (nodes_rejoin && previous_leadership != sgx_table[i].n_leadership) {
             ffprintf("The leader of this pass is [Node%03d]\n", i);
             sgx_table[i].time_left = sgx_table[i].sgx_time = randint(1, sgx_max);
-            sgx_table[i].arrival_time = current_time+1;
+            sgx_table[i].arrival_time = current_time + 1;
         }
     }
     return b;
@@ -196,13 +196,13 @@ void arrange() {
             current_time++;
             check_node_arrive();
         } else { // some sgx_table in the queue
-            current_node = (int) queue_front(queue);
+            current_node = (int)(long) queue_front(queue);
             queue_pop(queue);
 
             int temptier = calc_tier_number(&sgx_table[current_node]);
             uint qt = (uint) tier_quantum_time[temptier];
 
-            qt = min(qt, sgx_table[current_node].time_left);
+            qt = std::min(qt, sgx_table[current_node].time_left);
 
             for (uint i = qt; i > 0; i--) {
                 nodes_queue[current_time] = current_node;

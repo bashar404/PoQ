@@ -3,7 +3,7 @@
 #define JSON_ERROR_LEN 30
 
 int check_json_compliance(const char *buffer, size_t buffer_len) {
-    assert(buffer != NULL);
+    assert(buffer != nullptr);
     assert(buffer_len > 0);
 
     JSON_checker jc = new_JSON_checker(buffer_len);
@@ -106,11 +106,11 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
 
     for(auto node_i = sgx_table.begin(); node_i != sgx_table.end(); node_i++) {
         int tier = calc_tier_number(*(*node_i), ntiers, sgx_max);
-        printf("tier: %d\n", tier);
+        ERR("tier: %d\n", tier);
         quantum_times[tier] += (*node_i)->time_left;
-        printf("accumulated quantum time: %d\n", quantum_times[tier]);
+        ERR("accumulated quantum time: %d\n", quantum_times[tier]);
         tier_active_nodes[tier]++;
-        printf("tier active nodes: %d\n", tier_active_nodes[tier]);
+        ERR("tier active nodes: %d\n", tier_active_nodes[tier]);
     }
 
     for(int i = 0; i < quantum_times.size(); i++) {
@@ -118,7 +118,7 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
         uint &nn = tier_active_nodes[i];
 
         qt = (uint) ceilf(((float) qt) / ((float) nn*nn));
-        printf("Quantum time of tier %d: %u\n", i, qt);
+        ERR("Quantum time of tier %d: %u\n", i, qt);
     }
 
     return quantum_times;
@@ -141,11 +141,10 @@ static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntie
 
 static uint remaining_quantum_time(const std::vector<uint> &quantum_times, const node_t &node, int reps, uint tiers, uint sgx_max) {
     assert(reps >= 0);
-    uint r = 0;
-    uint tier = calc_tier_number(node, tiers, sgx_max);
-    uint quantum_time = quantum_times[tier];
-    uint sgx_time = node.sgx_time;
-    assert(reps * quantum_time <= sgx_time);
+    int r = 0;
+    int tier = calc_tier_number(node, tiers, sgx_max);
+    int quantum_time = quantum_times[tier];
+    int sgx_time = node.sgx_time;
     r = std::min(quantum_time, std::max(sgx_time - reps * quantum_time, r));
     return r;
 }
@@ -160,7 +159,7 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
     std::vector<uint> quantum_t_repetitions(sgx_table.size(), 0);
     std::vector<uint> quantum_times = calc_quantum_times(sgx_table, tiers, sgx_max);
 
-    time_t accumulated_time = 0;
+    int accumulated_time = 0;
 
     int remaining_time = current_node.time_left;
     while(!q.empty() && remaining_time > 0) {
@@ -177,9 +176,19 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
             remaining_time -= qt;
             assert(remaining_time >= 0);
         }
+
+        qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u], tiers, sgx_max);
+        if (qt > 0) {
+            ERR("Reading node %u into queue since he did not finish\n", u);
+            q.push(u);
+        }
     }
 
+    ERR("Remaining time (should be 0): %d\n", remaining_time);
+
     assert(remaining_time == 0);
+//    assert(remaining_time > current_node.arrival_time);
+//    return std::max(accumulated_time - (int) current_node.arrival_time, (int) current_node.sgx_time);
     return accumulated_time;
 }
 
@@ -200,7 +209,7 @@ time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table
     auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
 
     for(int i = 0; i < sgx_table.size(); i++) {
-        printf("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times, ntiers, sgx_max));
+        ERR("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times, ntiers, sgx_max));
     }
 
     /* **************** */

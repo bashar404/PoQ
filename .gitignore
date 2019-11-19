@@ -626,6 +626,7 @@ _deps
 client
 poet_main
 poet_server
+poet_test
 
 *_t.*
 *_u.*
@@ -633,4 +634,3 @@ poet_server
 
 *.txt
 blockchain.dat
-poet_test

@@ -21,9 +21,9 @@ void test_leadership_time() {
     queue_push(queue, (void *) 1);
     queue_push(queue, (void *) 2);
     queue_push(queue, (void *) 3);
-    queue_push(queue, (void *) 0);
-    queue_push(queue, (void *) 1);
-    queue_push(queue, (void *) 3);
+//    queue_push(queue, (void *) 0);
+//    queue_push(queue, (void *) 1);
+//    queue_push(queue, (void *) 3);
 
     time_t time = calc_leadership_time(queue, sgx_table, *sgx_table[3], 2, 10);
     INFO("time: %lu\n", time);

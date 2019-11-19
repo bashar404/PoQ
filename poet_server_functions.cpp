@@ -1,6 +1,6 @@
+#include "general_structs.h"
 #include "poet_server_functions.h"
 #include "poet_shared_functions.h"
-#include "general_structs.h"
 #include "queue_t.h"
 #include <cstdio>
 #include <cstring>
@@ -16,19 +16,7 @@
 
 const struct timespec LOCK_TIMEOUT = {5, 0};
 
-extern queue_t *queue;
-extern std::vector<node_t *> sgx_table;
-extern pthread_mutex_t sgx_table_lock;
-
-extern time_t current_time;
-pthread_rwlock_t current_time_lock = PTHREAD_RWLOCK_INITIALIZER;
-
-extern uint current_id;
-pthread_rwlock_t current_id_lock = PTHREAD_RWLOCK_INITIALIZER;
-
-extern size_t sgxmax;
-extern size_t sgxt_lowerbound;
-extern uint n_tiers;
+extern struct global g;
 
 std::map<std::string, uint> public_keys;
 pthread_rwlock_t public_keys_lock = PTHREAD_RWLOCK_INITIALIZER;
@@ -79,7 +67,8 @@ static bool check_public_key_and_signature_registration(const std::string &pk_st
     if (valid) {
         buff = decode_64base(sign_str.c_str(), sign_str.length(), &buff_len);
         if (buff == nullptr || buff_len != sizeof(signature_t)) {
-            ERROR("signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len, sizeof(signature_t));
+            ERROR("signature has an incorrect size (%lu bytes), should be (%lu bytes)\n", buff_len,
+                  sizeof(signature_t));
             valid = false;
         }
         memcpy(&sign, buff, sizeof(sign));
@@ -140,12 +129,12 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
 
     if (check_public_key_and_signature_registration(std::string(pk_64base), std::string(sign_64base), context)) {
         bool locked = true;
-        locked = rwlock_timedrdlocks(&LOCK_TIMEOUT, &current_id_lock, &public_keys_lock);
+        locked = rwlock_timedrdlocks(&LOCK_TIMEOUT, &g.current_id_lock, &public_keys_lock);
 //        locked = pthread_rwlock_timedrdlock(&current_id_lock, &LOCK_TIMEOUT) == 0;
         if (locked) {
-            context->node->node_id = current_id++;
+            context->node->node_id = g.current_id++;
             public_keys.insert({std::string(pk_64base), context->node->node_id});
-            rwlock_unlocks(&current_id_lock, &public_keys_lock);
+            rwlock_unlocks(&g.current_id_lock, &public_keys_lock);
         } else {
             perror("poet_register -> locks for current_id_lock and public_key_lock");
         }
@@ -158,9 +147,11 @@ int POET_PREFIX(register)(json_value *json, socket_t *socket, poet_context *cont
     /*****************************/
 
     msg = (char *) malloc(BUFFER_SIZE);
-    sprintf(msg, R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u, "n_tiers": %u}})", sgxmax,
-            sgxt_lowerbound, context->node->node_id, n_tiers);
-    ERR("Server is sending sgxmax (%lu) to the node\n", sgxmax);
+    sprintf(msg,
+            R"({"status":"success", "data": {"sgxmax" : %lu, "sgxt_lower": %lu, "node_id" : %u, "n_tiers": %u, "server_starting_time": %lu}})",
+            g.sgxmax,
+            g.sgxt_lowerbound, context->node->node_id, g.n_tiers, g.server_starting_time);
+    ERR("Server is sending sgxmax (%lu) to the node\n", g.sgxmax);
     socket_send_message(socket, msg, strlen(msg));
     free(msg);
 
@@ -207,14 +198,28 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
 
     bool state = true;
 
-    state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+    assertp(state = mutex_locks(&g.sgx_table_lock, g.queue->cond.cond_mutex));
     if (state) {
-        sgx_table.push_back(&node);
-        assert(sgx_table.back() == &node);
-        queue_push(queue, &node);
-        pthread_mutex_unlock(&sgx_table_lock);
-        ERR("Inserted node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into the SGX table and Queue\n", node.node_id,
-            node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+        if (node.node_id < g.sgx_table.size()) {
+            ERR("The node %d is already in the SGXtable\n", node.node_id);
+            node_t *n = g.sgx_table[node.node_id];
+            assert(n->node_id == node.node_id);
+            assert(node.sgx_time == node.time_left);
+            n->sgx_time = node.sgx_time;
+            n->arrival_time = node.arrival_time;
+            n->time_left = node.time_left;
+            n->n_leadership++;
+            queue_push(g.queue, &node);
+        } else {
+            g.sgx_table.push_back(&node);
+            assert(g.sgx_table.back() == &node);
+            queue_push(g.queue, &node);
+            ERR("Inserted node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into the SGX table and Queue\n",
+                node.node_id,
+                node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
+        }
+
+        mutex_unlocks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
     } else {
         perror("insert_node_into_sgx_table_and_queue");
     }
@@ -251,12 +256,13 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
         ERR("SGXt is received and checking the validity.\n");
     }
 
-    state = state && (sgxt_lowerbound <= sgxt && sgxt <= sgxmax);
+    state = state && (g.sgxt_lowerbound <= sgxt && sgxt <= g.sgxmax);
     ERR("SGXt is%s valid: %s (%u)\n", (state ? "" : " not"), (state ? "true" : "false"), sgxt);
 
     if (state) {
         node_t &node = *(context->node);
-        node.arrival_time = time(nullptr) - current_time;
+//        node.arrival_time = time(nullptr) - g.server_starting_time;
+        node.arrival_time = 0;
         node.n_leadership = 0;
         node.sgx_time = sgxt;
         node.time_left = sgxt;
@@ -273,7 +279,7 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
         if (state) {
             sprintf(msg,
                     R"({"status":"success", "data": {"n_nodes": %u, "n_tiers": %u, "arrival_times": %s, "quantum_times": %s}})",
-                    node.node_id + 1, n_tiers, arrival_times.c_str(), quantum_times.c_str()); // TODO: complete
+                    node.node_id + 1, g.n_tiers, arrival_times.c_str(), quantum_times.c_str()); // TODO: complete
         }
     }
 
@@ -295,20 +301,20 @@ std::string get_sgx_table_str(bool lock = true) {
     bool state = true;
 
     if (lock) {
-        state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+        state = pthread_mutex_timedlock(&g.sgx_table_lock, &LOCK_TIMEOUT) == 0;
         if (!state) {
             perror("get_sgx_table_str");
         }
     }
 
     if (state) {
-        for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
+        for (auto i = g.sgx_table.begin(); i != g.sgx_table.end(); i++) {
             const char *json = node_t_to_json(*i);
             sgx_table_str.append(json);
             sgx_table_str.append(",");
             free((void *) json);
         }
-        if (lock) pthread_mutex_unlock(&sgx_table_lock);
+        if (lock) pthread_mutex_unlock(&g.sgx_table_lock);
     }
 
     if (sgx_table_str.back() == ',') sgx_table_str.pop_back(); // delete the trailing comma if present
@@ -381,7 +387,7 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
 std::string get_queue_str() {
     std::string queue_str = "[";
 
-    queue_print_func_dump(queue, print_queue_value_into_buffer, &queue_str);
+    queue_print_func_dump(g.queue, print_queue_value_into_buffer, &queue_str);
 
     if (queue_str.back() == ',') queue_str.pop_back();
     queue_str.append("]");
@@ -427,19 +433,19 @@ int POET_PREFIX(get_sgxtable_and_queue)(json_value *json, socket_t *socket, poet
 
     bool state = true;
 
-    state = pthread_mutex_timedlock(&sgx_table_lock, &LOCK_TIMEOUT) == 0;
+    state = pthread_mutex_timedlock(&g.sgx_table_lock, &LOCK_TIMEOUT) == 0;
     if (!state) {
         perror("poet_get_sgxtable_and_queue");
     }
     std::string qs = state ? std::move(get_queue_str()) : "";
     std::string sgxt_str = state ? std::move(get_sgx_table_str(false)) : "";
-    if (state) pthread_mutex_unlock(&sgx_table_lock);
+    if (state) pthread_mutex_unlock(&g.sgx_table_lock);
 
     char *buffer = (char *) malloc(qs.length() + sgxt_str.length() + BUFFER_SIZE);
     state = state && buffer != nullptr;
     if (state) {
         uint written = 0;
-        written += sprintf(buffer, R"({"status":"success", "data":{"current_time": %lu, "queue": )", time(nullptr));
+        written += sprintf(buffer, R"({"status":"success", "data":{"queue": )");
         strcat(buffer + written, qs.c_str());
         written += qs.length();
         strcat(buffer + written, R"(, "sgx_table": )");

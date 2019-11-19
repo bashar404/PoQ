@@ -38,7 +38,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(SGX REQUIRED)
 
 add_executable(poet_main
-        POET++.c socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp
+        POET++.cpp socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp
         json-parser/json.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 target_link_libraries(poet_main m pthread)
 

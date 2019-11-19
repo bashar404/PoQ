@@ -46,51 +46,32 @@ pthread_t threads[MAX_THREADS];
 queue_t *threads_queue = nullptr;
 
 /********** PoET variables **********/
+struct global g;
 
-time_t current_time = 0;
-
-uint current_id = 0;
-size_t sgxt_lowerbound;
-size_t sgxmax;
-uint n_tiers;
-
-queue_t *queue = nullptr;
-
-std::vector<node_t *> sgx_table;
-pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
-
-pthread_cond_t sgx_table_notification_cond = PTHREAD_COND_INITIALIZER; // TODO see if it is not needed
-pthread_mutex_t sgx_table_notification_cond_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-socket_t *server_socket = nullptr;
-socket_t *secondary_socket = nullptr;
-
-std::map<uint, socket_t *> secondary_socket_comms;
-pthread_rwlock_t secondary_socket_comms_lock = PTHREAD_RWLOCK_INITIALIZER;
 /********** PoET variables END **********/
 
 /********** GLOBAL VARIABLES END **********/
 
 static void global_variables_initialization() {
-    queue = queue_constructor();
+    g.queue = queue_constructor();
     threads_queue = queue_constructor();
-    server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, MAIN_PORT);
-    secondary_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, SECONDARY_PORT);
+    g.server_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, MAIN_PORT);
+    g.secondary_socket = socket_constructor(DOMAIN, TYPE, PROTOCOL, SERVER_IP, SECONDARY_PORT);
 
-    if (queue == nullptr || server_socket == nullptr || threads_queue == nullptr || secondary_socket == nullptr) {
+    if (g.queue == nullptr || g.server_socket == nullptr || threads_queue == nullptr || g.secondary_socket == nullptr) {
         perror("queue, socket or threads_queue constructor");
         goto error;
     }
 
-    if (socket_bind(server_socket) != FALSE) {
+    if (socket_bind(g.server_socket) != FALSE) {
         goto error;
     }
 
-    if (socket_bind(secondary_socket) != FALSE) {
+    if (socket_bind(g.secondary_socket) != FALSE) {
         goto error;
     }
 
-    current_time = time(nullptr); // FIXME: maybe not necessary
+    g.server_starting_time = time(nullptr); // FIXME: maybe not necessary
 
     for (int i = 0; i < MAX_THREADS; i++) {
         queue_push(threads_queue, threads + i);
@@ -104,9 +85,9 @@ static void global_variables_initialization() {
 }
 
 static void global_variables_destruction() {
-    queue_destructor(queue, 1);
+    queue_destructor(g.queue, 1);
     queue_destructor(threads_queue, 0);
-    socket_destructor(server_socket);
+    socket_destructor(g.server_socket);
 }
 
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
@@ -115,9 +96,9 @@ static void signal_callback_handler(int signum) {
 //    global_variables_destruction();
     INFO("Caught signal %d\n", signum);
 
-    bool sgx_table_locked = pthread_mutex_trylock(&sgx_table_lock) == 0;
+    bool sgx_table_locked = pthread_mutex_trylock(&g.sgx_table_lock) == 0;
     if (sgx_table_locked) {
-        pthread_mutex_unlock(&sgx_table_lock);
+        pthread_mutex_unlock(&g.sgx_table_lock);
     }
     INFO("sgx_table_lock is locked: %d\n", !sgx_table_locked);
     exit(SIGINT);
@@ -256,20 +237,20 @@ static void *process_new_node(void *arg) {
 
 void set_global_constants() {
     printf("Enter SGXt lowerbound: ");
-    scanf("%lu", &sgxt_lowerbound);
+    scanf("%lu", &g.sgxt_lowerbound);
 
     printf("Enter SGXt upperbound: ");
-    scanf("%lu", &sgxmax);
+    scanf("%lu", &g.sgxmax);
 
     printf("Enter number of tiers: ");
-    scanf("%u", &n_tiers);
+    scanf("%u", &g.n_tiers);
 
-    if (sgxt_lowerbound >= sgxmax || sgxt_lowerbound == 0 || sgxmax == 0) {
+    if (g.sgxt_lowerbound >= g.sgxmax || g.sgxt_lowerbound == 0 || g.sgxmax == 0) {
         ERROR("invalid sgxt lowerbound and upperbound\n");
         exit(EXIT_FAILURE);
     }
 
-    if (n_tiers == 0 || n_tiers > (sgxmax - sgxt_lowerbound)) {
+    if (g.n_tiers == 0 || g.n_tiers > (g.sgxmax - g.sgxt_lowerbound)) {
         ERROR("invalid number of tiers\n");
         exit(EXIT_FAILURE);
     }
@@ -283,7 +264,7 @@ static void *asyncronous_send_message(void *arg) {
     auto buffer = (char *) ptr_lst[1];
     auto len = (size_t) ptr_lst[2];
 
-    ERR("Sending message to socket %d with the updated data: [%.*s]\n", socket->socket_descriptor, std::min(45, (int)len), buffer);
+    ERR("Sending message to socket %d with the updated data: [%.*s]\n", socket->socket_descriptor, std::min(150, (int)len), buffer);
 
     int sent = socket_send_message(socket, buffer, len);
     if (sent <= 0) {
@@ -301,14 +282,14 @@ static void *asyncronous_send_message(void *arg) {
 static void *sgx_table_and_queue_notification(void *_) {
     int ret = 1;
     do {
-        ret = queue_wait_change(queue); // wait until there is a change in the nodes queue
+        ret = queue_wait_change(g.queue); // wait until there is a change in the nodes queue
         ERR("There was a change on the queue, sending message to all subscribers ...\n");
         ret = 0; // ignore return status
 
-        assertp(pthread_mutex_lock(&sgx_table_lock) == 0);
+        assertp(pthread_mutex_lock(&g.sgx_table_lock) == 0);
         std::string qs = std::move(get_queue_str());
         std::string sgxt_str = std::move(get_sgx_table_str(false));
-        pthread_mutex_unlock(&sgx_table_lock);
+        pthread_mutex_unlock(&g.sgx_table_lock);
 
         int state = 1;
         time_t curr_time = time(nullptr);
@@ -317,7 +298,7 @@ static void *sgx_table_and_queue_notification(void *_) {
         state = state && buffer != nullptr;
         if (state) {
             uint written = 0;
-            written += sprintf(buffer, R"({"data":{"current_time": %lu, "queue": )", time(nullptr));
+            written += sprintf(buffer, R"({"data":{"queue": )");
             strcat(buffer + written, qs.c_str());
             written += qs.length();
             strcat(buffer + written, R"(, "sgx_table": )");
@@ -331,8 +312,8 @@ static void *sgx_table_and_queue_notification(void *_) {
         if (state) {
             std::queue<pthread_t *> q;
 
-            assertp(pthread_rwlock_rdlock(&secondary_socket_comms_lock) == 0);
-            for (auto pair = secondary_socket_comms.begin(); pair != secondary_socket_comms.end(); pair++) {
+            assertp(pthread_rwlock_rdlock(&g.secondary_socket_comms_lock) == 0);
+            for (auto pair = g.secondary_socket_comms.begin(); pair != g.secondary_socket_comms.end(); pair++) {
                 auto thread = (pthread_t *) queue_front_and_pop(threads_queue);
                 auto ptr_lst = (void **) calloc(3, sizeof(void *));
                 ptr_lst[0] = (*pair).second;
@@ -341,7 +322,7 @@ static void *sgx_table_and_queue_notification(void *_) {
                 delegate_thread_to_function(thread, (void *) ptr_lst, asyncronous_send_message, false);
                 q.push(thread);
             }
-            pthread_rwlock_unlock(&secondary_socket_comms_lock);
+            pthread_rwlock_unlock(&g.secondary_socket_comms_lock);
 
             while(!q.empty()) {
                 pthread_join(*q.front(), nullptr);
@@ -377,15 +358,15 @@ static void *process_secondary_node_addition(void *arg) {
 
         if (state) {
             uint node_id = json_nodeid->u.integer;
-            if (current_id <= node_id) { // invalid id
-                ERR("invalid node id: (current_id) %u <= (node_id) %u\n", current_id, node_id);
+            if (g.current_id <= node_id) { // invalid id
+                ERR("invalid node id: (current_id) %u <= (node_id) %u\n", g.current_id, node_id);
                 state = 0;
             }
             // will only add it if it is a valid id
             if (state)  {
-                assertp(pthread_rwlock_wrlock(&secondary_socket_comms_lock) == 0);
-                secondary_socket_comms[node_id] = socket;
-                pthread_rwlock_unlock(&secondary_socket_comms_lock);
+                assertp(pthread_rwlock_wrlock(&g.secondary_socket_comms_lock) == 0);
+                g.secondary_socket_comms[node_id] = socket;
+                pthread_rwlock_unlock(&g.secondary_socket_comms_lock);
                 const char *p = R"({"status":"success"})";
                 socket_send_message(socket, (void *) p, strlen(p));
                 ERR("Adds node %u into secondary socket message list on socket %d\n", node_id, socket->socket_descriptor);
@@ -419,13 +400,13 @@ static void *process_secondary_node_addition(void *arg) {
 static void *secondary_socket_sentinel(void *_) {
     ERR("Started to listen on secondary socket\n");
     while (received_termination_signal() == FALSE) {
-        int state = socket_select(secondary_socket);
+        int state = socket_select(g.secondary_socket);
         if (!state) {
             printf(",");
             continue;
         }
 
-        socket_t *new_socket = socket_accept(secondary_socket);
+        socket_t *new_socket = socket_accept(g.secondary_socket);
 
         ERR("Received new connection on secondary socket %d\n", new_socket->socket_descriptor);
 
@@ -443,11 +424,11 @@ int main(int argc, char *argv[]) {
 
     ERRR("queue: %p | server_socket: %p\n", queue, server_socket);
 
-    if (socket_listen(server_socket, MAX_CONNECTIONS) != FALSE) {
+    if (socket_listen(g.server_socket, MAX_CONNECTIONS) != FALSE) {
         goto error;
     }
 
-    if (socket_listen(secondary_socket, MAX_CONNECTIONS) != FALSE) {
+    if (socket_listen(g.secondary_socket, MAX_CONNECTIONS) != FALSE) {
         goto error;
     }
     INFO("Starting to listen\n");
@@ -464,13 +445,13 @@ int main(int argc, char *argv[]) {
     /* ************************ */
 
     while (received_termination_signal() == FALSE) {
-        int state = socket_select(server_socket);
+        int state = socket_select(g.server_socket);
         if (!state) {
             printf(".");
             continue;
         }
 
-        socket_t *new_socket = socket_accept(server_socket);
+        socket_t *new_socket = socket_accept(g.server_socket);
 
         while(queue_is_empty(threads_queue)) {
             WARN("The thread queue is empty, waiting until a thread finishes and gets added again into the queue.\n");

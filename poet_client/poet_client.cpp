@@ -42,7 +42,7 @@ socket_t *node_socket = nullptr;
 socket_t *subscribe_socket = nullptr;
 sgx_enclave_id_t eid = 0;
 
-time_t server_current_time;
+time_t server_starting_time = 0;
 
 uint sgxt;
 uint sgxmax;
@@ -64,7 +64,8 @@ cond_mutex_t tmp = {PTHREAD_COND_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
 void global_variable_initialization() {
     server_ip = (char *) malloc(18);
     printf("Set the ip address to communicate (-1 for 127.0.0.1): ");
-    scanf("%18s", server_ip);
+//    scanf("%18s", server_ip);
+    strcpy(server_ip, "-1");
     if (strcmp("-1", server_ip) == 0) {
         strcpy(server_ip, SERVER_IP);
     }
@@ -218,6 +219,10 @@ static int poet_register_with_pk() {
         json_tmp = find_value(json, "n_tiers");
         state = json_tmp != nullptr && json_tmp->type == json_integer;
         if (state) ntiers = json_tmp->u.integer;
+
+        json_tmp = find_value(json, "server_starting_time");
+        state = json_tmp != nullptr && json_tmp->type == json_integer;
+        if (state) server_starting_time = json_tmp->u.integer;
     }
 
     json_value_free(json);
@@ -282,8 +287,7 @@ static int poet_register_to_server() {
     state = state && poet_register_with_pk();
 
     if (state) {
-        ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
-            node_id);
+        ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound, node_id);
     }
 
     state = state && poet_remote_attestation_to_server();
@@ -453,12 +457,6 @@ static bool get_queue_and_sgx_table() {
 
     state = state && (json = check_json_success_status(buffer, len)) != nullptr;
 
-    if (state) {
-        json_value *json_current_time = find_value(json, "current_time");
-        state = json_current_time != nullptr && json_current_time->type == json_integer;
-        if (state) server_current_time = json_current_time->u.integer;
-    }
-
     mutex_locks(&sgx_table_lock, &queue_lock);
     state = state && get_queue_from_json(json, false);
     state = state && get_sgx_table_from_json(json, false);
@@ -512,6 +510,20 @@ int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &startin
     return state;
 }
 
+static void get_input_from_user_and_write(FILE *f) {
+    char name[20], address[20];
+    printf("Enter name: ");
+    fgets(name, 20, stdin);
+
+    printf("Enter address: ");
+    fgets(address, 20, stdin);
+
+//    fputs(name, f);
+    fprintf(f, "[Node %d] %20s", node_id, name);
+    fprintf(f, "[Node %d] %20s", node_id, address);
+//    fputs(address, f);
+}
+
 static void *blockchain_work(void *arg) { // thread 4
     int oldstate;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
@@ -521,14 +533,20 @@ static void *blockchain_work(void *arg) { // thread 4
     FILE *f;
     assertp((f = fopen(BLOCKCHAIN_FILE, "a")) != nullptr);
     time_t curr_time = time(nullptr);
-    struct tm time{};
+    struct tm time_tm{};
     char buf[80];
-    time = *localtime(&curr_time);
-    strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time);
+    time_tm = *localtime(&curr_time);
+    strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
 
-    fprintf(f, "Node %u starts writing at %s (%lu)\n", node_id, buf, curr_time);
-    sleep(execution_time);
-    fprintf(f, "Node %u finishes writing at %s (%lu)\n", node_id, buf, curr_time);
+//    fprintf(f, "Node %u starts writing at %s (%lu)\n", node_id, buf, curr_time);
+
+//    sleep(execution_time);
+    get_input_from_user_and_write(f);
+
+    curr_time = time(nullptr);
+    time_tm = *localtime(&curr_time);
+    strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
+//    fprintf(f, "Node %u finishes writing at %s (%lu)\n", node_id, buf, curr_time);
 
     fclose(f);
 
@@ -559,7 +577,7 @@ static void *starting_time_calculation(void *arg) { // thread 3
     pthread_detach(blockchain_writer_thread);
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 
-    INFO("Started blockchain write job at: %s (%lu)\n", time(nullptr));
+    INFO("Started blockchain write job at: %s (%lu)\n", "[PENDING]", time(nullptr));
 
     pthread_exit(nullptr);
 }
@@ -633,7 +651,7 @@ int main(int argc, char *argv[]) {
     assertp(pthread_create(&notifications_checker_thread, nullptr, notifications_sentinel, nullptr) == 0);
     pthread_detach(notifications_checker_thread);
 
-    while(!should_terminate && state) {
+    while(should_terminate != 2 && state) {
         state = poet_broadcast_sgxtime();
 //        if (state) {
 //            get_queue_and_sgx_table();
@@ -646,7 +664,7 @@ int main(int argc, char *argv[]) {
         assertp(pthread_cond_wait(&tmp.cond, &tmp.mutex) == 0);
         pthread_mutex_unlock(&tmp.mutex);
 
-        should_terminate = 1;
+        should_terminate++;
     }
 
 //    state = state && get_queue_and_sgx_table();
