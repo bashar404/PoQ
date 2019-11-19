@@ -7,8 +7,14 @@ extern "C" {
 
 #include <sys/socket.h>
 #include <stdlib.h>
-#include <netinet/in.h>
+
 #include "queue_t.h"
+#ifdef __WIN32
+#include <Winsock2.h>
+typedef int socklen_t;
+#else
+#include <netinet/in.h>
+#endif
 
 #define MSG_BYTES_SIZE 4
 #define MSG_BYTES_SIZE_CSTR STR(MSG_BYTES_SIZE)

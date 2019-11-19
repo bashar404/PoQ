@@ -10,10 +10,12 @@
 extern "C" {
 #endif
 
-#include <stdio.h>
-#include <stdint.h>
+#include <cstdio>
+#include <cstdint>
+#ifndef __WIN32
 #include <openssl/ssl.h>
 #include <openssl/rsa.h>
+#endif
 #include <json-parser/json.h>
 
 #define NUM_TYPE int8_t
@@ -68,9 +70,11 @@ struct global {
     pthread_rwlock_t secondary_socket_comms_lock = PTHREAD_RWLOCK_INITIALIZER;
 };
 
+#ifndef __WIN32
 const char *node_t_to_json(const node_t *);
 
 int json_to_node_t(const json_value *, node_t *);
+#endif
 
 void free_poet_context(struct poet_context *);
 

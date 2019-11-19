@@ -14,6 +14,9 @@
 #include "poet_common_definitions.h"
 
 #include "queue_t.h"
+#ifdef __WIN32
+#include "queue_t.c"
+#endif
 #include "general_structs.h"
 
 #define ffprintf(...) do{ fprintf(out, __VA_ARGS__); printf(__VA_ARGS__); } while(0)
@@ -36,6 +39,8 @@ float sumT[MAX_SIZE];
 FILE *out;
 
 queue_t *queue = NULL;
+
+time_t start_time = 0;
 
 static int calc_tier_number(node_t *node);
 
@@ -190,7 +195,7 @@ void arrange() {
     int current_node;
 
     check_node_arrive();
-    while (is_time_left() && (max_iterations == -1 || current_time < max_iterations) && !should_terminate) {
+    while (is_time_left() && (max_iterations == -1 || time(nullptr) - start_time < max_iterations) && !should_terminate) {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
@@ -351,7 +356,7 @@ int main(int argc, char *argv[]) {
     get_input_from_user(show_user_prompt);
 
     ERR("********* Begins execution *********\n");
-    time_t start_time = time(NULL);
+    start_time = time(NULL);
     struct tm  ts;
     char buf[80];
     ts = *localtime(&start_time);

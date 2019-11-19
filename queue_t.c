@@ -22,8 +22,8 @@ queue_t *queue_constructor() {
         goto error;
     }
 
-    q->cond.cond = malloc(sizeof(pthread_cond_t));
-    q->cond.cond_mutex = malloc(sizeof(pthread_mutex_t));
+    q->cond.cond = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
+    q->cond.cond_mutex = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
     if (q->cond.cond == NULL || q->cond.cond_mutex == NULL) {
         perror("queue constructor malloc 2");
         goto error;
@@ -134,7 +134,7 @@ void *queue_front_and_pop(queue_t *q) {
 
     pthread_rwlock_wrlock(q->lock);
 
-    item_t *d = NULL;
+    void *d = NULL;
 
     if (q->head != NULL) {
         item_t *t = q->head;
@@ -162,7 +162,7 @@ void queue_push(queue_t *q, void *d) {
 
     pthread_rwlock_wrlock(q->lock);
 
-    item_t *new_item = malloc(sizeof(item_t));
+    item_t *new_item = (item_t *) malloc(sizeof(item_t));
     if (new_item == NULL) goto error;
     memset(new_item, 0, sizeof(item_t));
 
