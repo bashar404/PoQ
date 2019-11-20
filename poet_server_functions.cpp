@@ -261,8 +261,8 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
 
     if (state) {
         node_t &node = *(context->node);
-//        node.arrival_time = time(nullptr) - g.server_starting_time;
-        node.arrival_time = 0;
+        node.arrival_time = time(nullptr) - g.server_starting_time;
+//        node.arrival_time = 0;
         node.n_leadership = 0;
         node.sgx_time = sgxt;
         node.time_left = sgxt;
@@ -494,6 +494,38 @@ int POET_PREFIX(close_connection)(json_value *json, socket_t *socket, poet_conte
     return state;
 }
 
+int POET_PREFIX(unfinished_node)(json_value *json, socket_t *socket, poet_context *context) {
+    assert(json != nullptr);
+    assert(socket != nullptr);
+    assert(context != nullptr);
+
+    bool state = true;
+
+    node_t new_node{};
+
+    state = json_to_node_t(json, &new_node);
+
+    mutex_locks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
+    if (state && new_node.node_id < g.sgx_table.size()) {
+        node_t *dest = g.sgx_table[new_node.node_id];
+        assert(dest != nullptr);
+        memcpy(dest, &new_node, sizeof(node_t));
+        queue_pop(g.queue);
+        queue_push(g.queue, dest);
+    } else {
+        state = false;
+    }
+    mutex_unlocks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
+
+    const char *msg = nullptr;
+    if (state) {
+        msg = R"({"status": "success"})";
+    } else {
+        msg = R"({"status": "failure"})";
+    }
+    socket_send_message(socket, (void *) msg, strlen(msg));
+}
+
 struct function_handle poet_functions[] = {
         FUNC_PAIR(register),
         FUNC_PAIR(remote_attestation),
@@ -502,5 +534,6 @@ struct function_handle poet_functions[] = {
         FUNC_PAIR(get_queue),
         FUNC_PAIR(get_sgxtable_and_queue),
         FUNC_PAIR(close_connection),
+        FUNC_PAIR(unfinished_node),
         {nullptr, nullptr} // to indicate end
 };

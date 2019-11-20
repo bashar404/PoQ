@@ -8,7 +8,7 @@
 #include <vector>
 #include <string>
 #include <csignal>
-#include <fcntl.h>
+#include <sys/file.h>
 
 #include "socket_t.h"
 #include "queue_t.h"
@@ -30,7 +30,7 @@
 #define SERVER_IP "127.0.0.1"
 
 #define BLOCKCHAIN_FILE "blockchain.dat"
-#define BLOCKCHAIN_WRITE_TIME 15
+#define BLOCKCHAIN_WRITE_TIME 1 /* change */
 
 int should_terminate = 0;
 char *server_ip = nullptr;
@@ -305,6 +305,18 @@ static std::string node_to_json(const node_t &node) { // move to general methods
     return s;
 }
 
+static void print_sgx_table_and_queue() {
+    printf("SGX Table:\n---------------------\n");
+    for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
+        printf("%s\n", node_to_json(**i).c_str());
+    }
+    printf("---------------------\n");
+
+    printf("Queue: ");
+    queue_print(queue);
+    printf("\n");
+}
+
 static bool get_sgx_table_from_json(json_value *json, bool lock = true) {
     assert(json != nullptr);
 
@@ -457,7 +469,7 @@ static bool get_queue_and_sgx_table() {
 
     state = state && (json = check_json_success_status(buffer, len)) != nullptr;
 
-    mutex_locks(&sgx_table_lock, &queue_lock);
+    assertp(mutex_locks(&sgx_table_lock, &queue_lock));
     state = state && get_queue_from_json(json, false);
     state = state && get_sgx_table_from_json(json, false);
     mutex_unlocks(&sgx_table_lock, &queue_lock);
@@ -476,7 +488,7 @@ static bool get_queue_and_sgx_table() {
 static bool server_close_connection() {
     char *buffer = (char *) malloc(BUFFER_SIZE);
     sprintf(buffer, R"({"method":"close_connection", "data": null})");
-    int state = socket_send_message(node_socket, buffer, strlen(buffer));
+    int state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
     free(buffer);
     buffer = nullptr;
 
@@ -505,7 +517,7 @@ int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &startin
 
     tier = calc_tier_number(*sgx_table[node_id], ntiers, sgxmax);
     quantum_time = quantum_times[tier];
-    starting_time = calc_starting_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
+    starting_time = calc_starting_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax); // TODO remove: not used
 
     return state;
 }
@@ -524,30 +536,69 @@ static void get_input_from_user_and_write(FILE *f) {
 //    fputs(address, f);
 }
 
+static bool notify_readdition_of_node_into_queue(int time_left) {
+    assert(time_left > 0);
+    WARN("Time left to notify to the server: %u\n", time_left);
+
+    bool state = true;
+
+    char *buffer = (char *) malloc(BUFFER_SIZE);
+    node_t tmp_node{};
+    memcpy(&tmp_node, sgx_table[node_id], sizeof(node_t));
+    tmp_node.time_left = time_left;
+    assert(tmp_node.sgx_time > time_left);
+
+    std::string str = node_to_json(tmp_node);
+    sprintf(buffer, R"({"method":"unfinished_node", "data": %s})", str.c_str());
+    state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
+    free(buffer);
+    buffer = nullptr;
+
+    size_t len = 0;
+    state = state && socket_get_message(node_socket, (void **) &buffer, &len);
+    state = state && buffer != nullptr;
+    state = state && check_json_success_status(buffer, len);
+
+    if (buffer != nullptr) {
+        free(buffer);
+    }
+
+    return state;
+}
+
+static bool notify_leadership_of_node() {
+    // TODO
+    ERROR("method not implemented\n");
+}
+
 static void *blockchain_work(void *arg) { // thread 4
     int oldstate;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
 
+    notify_leadership_of_node();
     uint execution_time = (uint)(long) arg;
 
     FILE *f;
     assertp((f = fopen(BLOCKCHAIN_FILE, "a")) != nullptr);
+    assertp(flock(fileno(f), LOCK_EX) == 0); // exclusive access to file
+
     time_t curr_time = time(nullptr);
     struct tm time_tm{};
     char buf[80];
     time_tm = *localtime(&curr_time);
     strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
 
-//    fprintf(f, "Node %u starts writing at %s (%lu)\n", node_id, buf, curr_time);
+    fprintf(f, "Node %u starts writing at %s (%lu)\n", node_id, buf, curr_time);
 
-//    sleep(execution_time);
-    get_input_from_user_and_write(f);
+    sleep(execution_time);
+//    get_input_from_user_and_write(f);
 
     curr_time = time(nullptr);
     time_tm = *localtime(&curr_time);
     strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
-//    fprintf(f, "Node %u finishes writing at %s (%lu)\n", node_id, buf, curr_time);
+    fprintf(f, "Node %u finishes writing at %s (%lu)\n", node_id, buf, curr_time);
 
+    flock(fileno(f), LOCK_UN); // unlocks file
     fclose(f);
 
     pthread_cond_signal(&tmp.cond);
@@ -556,20 +607,51 @@ static void *blockchain_work(void *arg) { // thread 4
 }
 
 static void *starting_time_calculation(void *arg) { // thread 3
-    ERROR("incomplete function\n");
-
     // TODO: calculate the starting time of this node
-    uint quantum_time, tier, starting_time;
+//    uint quantum_time, tier, starting_time;
     assertp(mutex_locks(&sgx_table_lock, &queue_lock));
-    calculate_necessary_parameters(quantum_time, tier, starting_time);
-    printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
+//    calculate_necessary_parameters(quantum_time, tier, starting_time);
+//    printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
 
+    print_sgx_table_and_queue(); // TODO delete
+
+    auto notification_times = calc_notification_times(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
     time_t leadership_time = calc_leadership_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
     mutex_unlocks(&sgx_table_lock, &queue_lock);
 
+    if (!notification_times.empty()) {
+        ERR("last notification time <= leadership time: %d\n", notification_times.back() <= leadership_time);
+        ERR("last notification time: %lu <= leadership time: %lu\n", notification_times.back(), leadership_time);
+    }
+
+    assert(notification_times.empty() || notification_times.back() <= leadership_time);
+    for(auto & notification_time : notification_times) {
+        ERR("%ld\n", notification_time);
+    }
+    fprintf(stderr, "\n");
     INFO("Leadership time: %lu\n", leadership_time);
 
-    sleep(leadership_time);
+    if (!notification_times.empty() && notification_times.back() == leadership_time) {
+        notification_times.pop_back();
+    }
+
+    int curr_time = 0;
+    int remaining_time = sgx_table[node_id]->time_left;
+    for(auto & notification_time : notification_times) {
+        assert(curr_time < notification_time);
+        sleep(notification_time - curr_time);
+        remaining_time -= notification_time;
+        curr_time = notification_time;
+
+        WARN("Notifying server of readdition: %d\n", curr_time);
+        if (remaining_time > 0) {
+            notify_readdition_of_node_into_queue(remaining_time);
+        }
+    }
+
+    sleep(leadership_time - curr_time);
+
+    /* ****** BECOMES LEADER ****** */
 
     int oldstate;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
@@ -651,7 +733,7 @@ int main(int argc, char *argv[]) {
     assertp(pthread_create(&notifications_checker_thread, nullptr, notifications_sentinel, nullptr) == 0);
     pthread_detach(notifications_checker_thread);
 
-    while(should_terminate != 2 && state) {
+    while(should_terminate < 2 && state) {
         state = poet_broadcast_sgxtime();
 //        if (state) {
 //            get_queue_and_sgx_table();
@@ -663,21 +745,14 @@ int main(int argc, char *argv[]) {
         assertp(pthread_mutex_lock(&tmp.mutex) == 0);
         assertp(pthread_cond_wait(&tmp.cond, &tmp.mutex) == 0);
         pthread_mutex_unlock(&tmp.mutex);
+        ERR("received signal to generate new sgx time\n");
 
         should_terminate++;
     }
 
 //    state = state && get_queue_and_sgx_table();
     if (state) {
-        printf("SGX Table:\n---------------------\n");
-        for (auto i = sgx_table.begin(); i != sgx_table.end(); i++) {
-            printf("%s\n", node_to_json(**i).c_str());
-        }
-        printf("---------------------\n");
 
-        printf("Queue: ");
-        queue_print(queue);
-        printf("\n");
     }
 
 //    state = state && server_close_connection();

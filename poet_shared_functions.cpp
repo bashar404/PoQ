@@ -117,7 +117,7 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
         uint &qt = quantum_times[i];
         uint &nn = tier_active_nodes[i];
 
-        qt = (uint) ceilf(((float) qt) / ((float) nn*nn));
+        qt = nn > 0 ? (uint) ceilf(((float) qt) / ((float) nn*nn)) : 0;
         ERR("Quantum time of tier %d: %u\n", i, qt);
     }
 
@@ -144,7 +144,7 @@ static uint remaining_quantum_time(const std::vector<uint> &quantum_times, const
     int r = 0;
     int tier = calc_tier_number(node, tiers, sgx_max);
     int quantum_time = quantum_times[tier];
-    int sgx_time = node.sgx_time;
+    int sgx_time = node.time_left;
     r = std::min(quantum_time, std::max(sgx_time - reps * quantum_time, r));
     return r;
 }
@@ -192,12 +192,48 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
     return accumulated_time;
 }
 
-std::vector<time_t> calc_starting_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
-    std::vector<time_t> starting_times;
+std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+    assert(queue != nullptr);
+    std::queue<uint> q;
+    queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
 
-    // TODO complete if it is necessary
+    /* ************* */
 
-    return starting_times;
+    std::vector<time_t> notification_times;
+
+    std::vector<uint> quantum_t_repetitions(sgx_table.size(), 0);
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
+    int remaining_time = current_node.time_left;
+//    assert(current_node.sgx_time == current_node.time_left);
+    int accumulated_time = 0;
+
+    while(!q.empty() && remaining_time > 0) {
+        uint u = q.front(); q.pop();
+        assert(0 <= u && u < sgx_table.size());
+        assert(sgx_table[u] != nullptr);
+
+        uint qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u]++, ntiers, sgx_max);
+        ERR("Remaining quantum time (node %d): %u\n", u, qt);
+        assert(qt >= 0);
+        accumulated_time += qt;
+        if (u == current_node.node_id) {
+            assert(remaining_time >= qt);
+            remaining_time -= qt;
+            assert(remaining_time >= 0);
+        }
+
+        qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u], ntiers, sgx_max);
+        if (qt > 0) {
+            ERR("Reading node %u into queue since he did not finish\n", u);
+            q.push(u);
+        }
+
+        if (u == current_node.node_id && remaining_time > 0) {
+            notification_times.push_back(accumulated_time);
+        }
+    }
+
+    return notification_times;
 }
 
 /* TODO should rather be all the starting times of the current node */
@@ -357,6 +393,8 @@ int nrwlock_unlocks(uint locks, ...) {
 
 int nmutex_locks(uint locks, ...) {
     assert(locks > 0);
+    ERRR("locks: %d\n", locks);
+
     auto locks_list = (pthread_mutex_t **) calloc(locks, sizeof(pthread_mutex_t *));
     if (locks_list == nullptr) {
         perror("mutex_lock calloc");
@@ -377,12 +415,13 @@ int nmutex_locks(uint locks, ...) {
     int i;
     int errv = errno;
     for(i = 0; i < locks && locked; i++) {
+        ERRR("Locking lock at %p\n", locks_list[i]);
         locked = locked && pthread_mutex_lock(locks_list[i]) == 0;
         errv = errno;
     }
 
     if (!locked) {
-        ERR("Could not lock all mutexes");
+        ERROR("Could not lock all mutexes\n");
         i--; // the last one could no be locked
         for(; i >= 0; i--) {
             pthread_mutex_unlock(locks_list[i]);
@@ -394,8 +433,11 @@ int nmutex_locks(uint locks, ...) {
     errno = errv;
     return locked;
 }
+
 int nmutex_unlocks(uint locks, ...) {
     assert(locks > 0);
+    ERRR("unlocks: %d\n", locks);
+
     auto locks_list = (pthread_mutex_t **) calloc(locks, sizeof(pthread_mutex_t *));
     if (locks_list == nullptr) {
         perror("nmutex_unlock calloc");
@@ -414,6 +456,7 @@ int nmutex_unlocks(uint locks, ...) {
     int unlocked = 1;
     int errv = 0;
     for(int i = locks-1; i >= 0; i--) {
+        ERRR("Unlocking lock at %p\n", locks_list[i]);
         unlocked = unlocked && pthread_mutex_unlock(locks_list[i]) == 0;
         errv = std::max(errno, errv);
     }

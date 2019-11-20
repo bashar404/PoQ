@@ -48,23 +48,23 @@ int json_to_node_t(const json_value *json, node_t *node) {
 
     value = find_value(root, "node_id");
     state = state && value != nullptr;
-    if (state) node->node_id = value->u.integer;
+    if (state) node->node_id = std::max(value->u.integer, (long) 0);
 
     value = state ? find_value(root, "sgx_time") : nullptr;
     state = state && value != nullptr;
-    if (state) node->sgx_time = value->u.integer;
+    if (state) node->sgx_time = std::max(value->u.integer, (long) 0);
 
     value = state ? find_value(root, "n_leadership") : nullptr;
     state = state && value != nullptr;
-    if (state) node->n_leadership = value->u.integer;
+    if (state) node->n_leadership = std::max(value->u.integer, (long) 0);
 
     value = state ? find_value(root, "time_left") : nullptr;
     state = state && value != nullptr;
-    if (state) node->time_left = value->u.integer;
+    if (state) node->time_left = std::min((long) node->sgx_time, std::max(value->u.integer, (long) 0));
 
     value = state ? find_value(root, "arrival_time") : nullptr;
     state = state && value != nullptr;
-    if (state) node->arrival_time = value->u.integer;
+    if (state) node->arrival_time = std::max(value->u.integer, (long) 0);
 
     return state;
 }

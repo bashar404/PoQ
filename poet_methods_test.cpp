@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include <unistd.h>
 #include "poet_common_definitions.h"
 #include "poet_shared_functions.h"
 #include "queue_t.h"
@@ -30,6 +31,49 @@ void test_leadership_time() {
     assertp(time == 25);
 }
 
+void *test_thread_locks(void * arg) {
+    auto list = (pthread_mutex_t **) arg;
+    pthread_mutex_t &lock1 = *list[0];
+    pthread_mutex_t &lock2 = *list[1];
+
+    printf("2 time: %lu\n", time(nullptr));
+    assertp(mutex_locks(&lock1, &lock2));
+
+    printf("2 time: %lu\n", time(nullptr));
+
+    mutex_unlocks(&lock2, &lock1);
+
+}
+
+void test_locks_methods() {
+    pthread_t thread;
+
+    pthread_mutex_t lock1, lock2;
+    auto list = (pthread_mutex_t **) calloc(2, sizeof(pthread_mutex_t *));
+    list[0] = &lock1;
+    list[1] = &lock2;
+    assertp(pthread_mutex_init(&lock1, nullptr) == 0);
+    assertp(pthread_mutex_init(&lock2, nullptr) == 0);
+
+    assertp(mutex_locks(&lock2, &lock1));
+
+    pthread_create(&thread, nullptr, test_thread_locks, list);
+
+    printf("1 time: %lu\n", time(nullptr));
+    sleep(2);
+    printf("1 time: %lu\n", time(nullptr));
+
+    mutex_unlocks(&lock1, &lock2);
+
+    pthread_join(thread, nullptr);
+
+    pthread_mutex_destroy(&lock1);
+    pthread_mutex_destroy(&lock2);
+
+    free(list);
+}
+
 int main() {
     test_leadership_time();
+    test_locks_methods();
 }
