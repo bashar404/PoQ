@@ -106,11 +106,11 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
 
     for(auto node_i = sgx_table.begin(); node_i != sgx_table.end(); node_i++) {
         int tier = calc_tier_number(*(*node_i), ntiers, sgx_max);
-        ERR("tier: %d\n", tier);
+//        ERR("tier: %d\n", tier);
         quantum_times[tier] += (*node_i)->time_left;
-        ERR("accumulated quantum time: %d\n", quantum_times[tier]);
+//        ERR("accumulated quantum time: %d\n", quantum_times[tier]);
         tier_active_nodes[tier]++;
-        ERR("tier active nodes: %d\n", tier_active_nodes[tier]);
+//        ERR("tier active nodes: %d\n", tier_active_nodes[tier]);
     }
 
     for(int i = 0; i < quantum_times.size(); i++) {

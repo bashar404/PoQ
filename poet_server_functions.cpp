@@ -202,6 +202,11 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
     if (state) {
         if (node.node_id < g.sgx_table.size()) {
             ERR("The node %d is already in the SGXtable\n", node.node_id);
+            if (((node_t *) queue_front(g.queue))->node_id == node.node_id) {
+                INFO("node %d in the beggining of the queue, dequeuing ... \n", node.node_id);
+                assert(g.sgx_table[node.node_id]->node_id == node.node_id);
+                queue_pop(g.queue);
+            }
             node_t *n = g.sgx_table[node.node_id];
             assert(n->node_id == node.node_id);
             assert(node.sgx_time == node.time_left);
