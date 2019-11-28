@@ -11,6 +11,8 @@
 #include <cassert>
 #include <csignal>
 #include <vector>
+#include <unistd.h>
+#include <random>
 
 using namespace std;
 
@@ -26,6 +28,7 @@ using namespace std;
 
 #define MAX_SIZE 20000000
 #define MAX_ITERATIONS 100000
+#define WAIT 1000 /* 1 milisecond */
 
 /*********************************************************************/
 
@@ -48,19 +51,31 @@ time_t start_time = 0;
 
 static int calc_tier_number(node_t *node);
 
-uint randint(int start, int end) {
-    assert(start <= end);
-    start = std::max(0, std::min(start, RAND_MAX));
-    end = std::max(0, std::min(end, RAND_MAX));
+bool deterministic;
 
-    return end > 0 ? start + rand() % end : 0;
+uint randint(int start, int end) {
+    static std::random_device rand_dev;
+    static std::mt19937 generator(rand_dev());
+
+    assert(start <= end);
+    if (deterministic) {
+        fprintf(stderr, "Wrong\n");
+        start = std::max(0, std::min(start, RAND_MAX));
+        end = std::max(0, std::min(end, RAND_MAX));
+        return end > 0 ? start + rand() % end : 0;
+    }
+
+    std::uniform_int_distribution<int> distr(start, end);
+
+    return end > 0 ? distr(generator) : 0;
 }
 
 void get_input_from_user(int prompt) {
     if (prompt) printf("Seed for pseudo-random number generator (-1 for random): ");
     int seed;
     scanf("%d", &seed);
-    seed = seed >= 0 ? std::max(0,seed) : (int) time(NULL);
+    deterministic = seed >= 0;
+    seed = seed >= 0 ? std::max(0,seed) : (int) time(nullptr);
     srand(seed);
 
     printf("Max number of iterations (-1 for infinite): ");
@@ -137,6 +152,10 @@ void print_sgx_table() {
                sgx_table[i].n_leadership,
                sgx_table[i].time_left);
     }
+    ffprintf("Just the leaderships\n");
+    for (int i = 0; i < node_count; i++) {
+        ffprintf("%5d\n", sgx_table[i].n_leadership);
+    }
 }
 
 int is_time_left() {
@@ -203,6 +222,7 @@ void arrange() {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
+            usleep(WAIT);
             check_node_arrive();
         } else { // some sgx_table in the queue
             current_node = (int)(long) queue_front(queue);
@@ -217,6 +237,7 @@ void arrange() {
 //                nodes_queue.push_back(make_pair(current_node, current_time));
                 sgx_table[current_node].time_left--; //reducing the remaining time
                 current_time++;
+                usleep(WAIT);
                 check_node_arrive(); // keeping track if any node joins
             }
 
