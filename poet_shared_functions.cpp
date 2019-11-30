@@ -4,7 +4,9 @@
 
 int check_json_compliance(const char *buffer, size_t buffer_len) {
     assert(buffer != nullptr);
-    assert(buffer_len > 0);
+    assert(buffer_len >= 0);
+
+    if (buffer_len == 0) return 0;
 
     JSON_checker jc = new_JSON_checker(buffer_len);
 
@@ -97,20 +99,32 @@ int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max) {
     return tier;
 }
 
-std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint ntiers, uint sgx_max) {
+static void copy_queuet_std_queue(void * node_ptr, void * std_queue_ptr) {
+    auto &q = *((std::queue<uint> *) std_queue_ptr);
+    auto node = (uint) ((long long) (node_ptr));
+
+    q.push(node);
+}
+
+std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint ntiers, uint sgx_max, time_t node_current_time, time_t server_starting_time) {
     assert(ntiers > 0);
     assert(sgx_max > 0);
 
-    std::vector<uint> quantum_times(ntiers, 0);
-    std::vector<uint> tier_active_nodes(ntiers, 0);
+    std::vector<uint> quantum_times(sgx_table.size(), 0);
+    std::vector<uint> tier_active_nodes(sgx_table.size(), 1);
 
-    for(auto node_i = sgx_table.begin(); node_i != sgx_table.end(); node_i++) {
-        int tier = calc_tier_number(*(*node_i), ntiers, sgx_max);
-//        ERR("tier: %d\n", tier);
-        quantum_times[tier] += (*node_i)->time_left;
-//        ERR("accumulated quantum time: %d\n", quantum_times[tier]);
-        tier_active_nodes[tier]++;
-//        ERR("tier active nodes: %d\n", tier_active_nodes[tier]);
+    for(auto node_i : sgx_table) { // Can be changed to O(n) instead of O(n^2)
+        int tier_i = calc_tier_number(*node_i, ntiers, sgx_max);
+        quantum_times[node_i->node_id] += node_i->sgx_time;
+        for(auto node_j : sgx_table) {
+            if (node_i == node_j) continue;
+
+            int tier_j = calc_tier_number(*node_j, ntiers, sgx_max);
+            if ((tier_i == tier_j) && (node_j->arrival_time <= node_i->arrival_time)) {
+                quantum_times[node_i->node_id] += node_j->time_left;
+                tier_active_nodes[node_i->node_id]++;
+            }
+        }
     }
 
     for(int i = 0; i < quantum_times.size(); i++) {
@@ -118,17 +132,16 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
         uint &nn = tier_active_nodes[i];
 
         qt = nn > 0 ? (uint) ceilf(((float) qt) / ((float) nn*nn)) : 0;
-        ERR("Quantum time of tier %d: %u\n", i, qt);
+        ERR("Quantum time of node %d: %u\n", i, qt);
     }
 
+#ifdef DEBUG
+    for(int i = 0; i < quantum_times.size(); i++) {
+        ERR("Node %3d qt: %u\n", i, quantum_times[i]);
+    }
+#endif
+
     return quantum_times;
-}
-
-static void copy_queuet_std_queue(void * node_ptr, void * std_queue_ptr) {
-    auto &q = *((std::queue<uint> *) std_queue_ptr);
-    auto node = (uint) ((long long) (node_ptr));
-
-    q.push(node);
 }
 
 static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntiers, uint sgx_max) {
@@ -142,14 +155,13 @@ static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntie
 static uint remaining_quantum_time(const std::vector<uint> &quantum_times, const node_t &node, int reps, uint tiers, uint sgx_max) {
     assert(reps >= 0);
     int r = 0;
-    int tier = calc_tier_number(node, tiers, sgx_max);
-    int quantum_time = quantum_times[tier];
-    int sgx_time = node.time_left;
+    int quantum_time = quantum_times[node.node_id];
+    int sgx_time = node.sgx_time;
     r = std::min(quantum_time, std::max(sgx_time - reps * quantum_time, r));
     return r;
 }
 
-time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max) {
+time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max, time_t node_current_time, time_t server_starting_time) {
     assert(queue != nullptr);
     std::queue<uint> q;
     queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
@@ -157,11 +169,19 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
     /* **************** */
 
     std::vector<uint> quantum_t_repetitions(sgx_table.size(), 0);
-    std::vector<uint> quantum_times = calc_quantum_times(sgx_table, tiers, sgx_max);
+    std::vector<uint> quantum_times = calc_quantum_times(sgx_table, tiers, sgx_max, node_current_time, server_starting_time);
 
     int accumulated_time = 0;
 
     int remaining_time = current_node.time_left;
+    uint minimum_arrival_time = current_node.arrival_time;
+
+    for(int i = 0; i < sgx_table.size(); i++) {
+        minimum_arrival_time = std::min(minimum_arrival_time, sgx_table[i]->arrival_time);
+    }
+
+    bool found_myself = false;
+
     while(!q.empty() && remaining_time > 0) {
         uint u = q.front(); q.pop();
         ERR("Processing node %d\n", u);
@@ -171,28 +191,37 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
         uint qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u]++, tiers, sgx_max);
         ERR("Remaining quantum time (node %d): %u\n", u, qt);
         assert(qt >= 0);
-        accumulated_time += qt;
+        accumulated_time += std::min(qt, (uint) remaining_time);
         if (u == current_node.node_id) {
-            remaining_time -= qt;
+            found_myself = true;
+            remaining_time -= std::min(qt, (uint) remaining_time);
             assert(remaining_time >= 0);
         }
 
         qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u], tiers, sgx_max);
         if (qt > 0) {
-            ERR("Reading node %u into queue since he did not finish\n", u);
+            ERR("re-adding node %u into queue since he did not finish\n", u);
             q.push(u);
         }
     }
 
     ERR("Remaining time (should be 0): %d\n", remaining_time);
 
-    assert(remaining_time == 0);
-//    assert(remaining_time > current_node.arrival_time);
+    assert(!found_myself || remaining_time == 0);
+//    assert(accumulated_time > current_node.arrival_time);
 //    return std::max(accumulated_time - (int) current_node.arrival_time, (int) current_node.sgx_time);
-    return accumulated_time;
+    long comm_delay = std::max(node_current_time - minimum_arrival_time, (long) 0);
+    assert(comm_delay >= 0);
+    if (comm_delay) {
+        ERR("comm delay was greater than 0: %ld\n", comm_delay);
+    }
+
+    ERR("Calculated leadership time: %ld\n", accumulated_time - comm_delay);
+
+    return found_myself ? std::max(accumulated_time - comm_delay, (long) 0) : -1;
 }
 
-std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max, time_t node_current_time, time_t server_starting_time) {
     assert(queue != nullptr);
     std::queue<uint> q;
     queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
@@ -202,10 +231,21 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
     std::vector<time_t> notification_times;
 
     std::vector<uint> quantum_t_repetitions(sgx_table.size(), 0);
-    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max, node_current_time, server_starting_time);
     int remaining_time = current_node.time_left;
 //    assert(current_node.sgx_time == current_node.time_left);
     int accumulated_time = 0;
+    uint minimum_arrival_time = current_node.arrival_time;
+
+    for(int i = 0; i < sgx_table.size(); i++) {
+        minimum_arrival_time = std::min(minimum_arrival_time, sgx_table[i]->arrival_time);
+    }
+
+    long comm_delay = node_current_time - minimum_arrival_time;
+    assert(comm_delay >= 0);
+    if (comm_delay) {
+        ERR("comm delay was greater than 0: %ld\n", comm_delay);
+    }
 
     while(!q.empty() && remaining_time > 0) {
         uint u = q.front(); q.pop();
@@ -215,10 +255,10 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
         uint qt = remaining_quantum_time(quantum_times, *sgx_table[u], quantum_t_repetitions[u]++, ntiers, sgx_max);
         ERR("Remaining quantum time (node %d): %u\n", u, qt);
         assert(qt >= 0);
-        accumulated_time += qt;
+        accumulated_time += std::min(qt, (uint) remaining_time);
         if (u == current_node.node_id) {
-            assert(remaining_time >= qt);
-            remaining_time -= qt;
+//            assert(remaining_time >= qt);
+            remaining_time -= std::min(qt, (uint) remaining_time);
             assert(remaining_time >= 0);
         }
 
@@ -229,7 +269,7 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
         }
 
         if (u == current_node.node_id && remaining_time > 0) {
-            notification_times.push_back(accumulated_time);
+            notification_times.push_back(std::max(accumulated_time - comm_delay, (long) 0));
         }
     }
 
@@ -237,12 +277,12 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
 }
 
 /* TODO should rather be all the starting times of the current node */
-time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max) {
+time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max, time_t node_current_time, time_t server_starting_time) {
     assert(queue != nullptr);
     std::queue<uint> q;
     queue_print_func_dump((queue_t *) queue, copy_queuet_std_queue, &q);
 
-    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max);
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgx_max, node_current_time, server_starting_time);
 
     for(int i = 0; i < sgx_table.size(); i++) {
         ERR("Qt(%d) = %u\n", i, calc_qt(sgx_table[i], quantum_times, ntiers, sgx_max));
@@ -320,7 +360,7 @@ static int comp_address(const void *a, const void *b) {
     }
 }
 
-int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
+int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...) {
     assert(locks > 0);
     auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
     if (locks_list == nullptr) {
@@ -329,7 +369,7 @@ int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
     }
 
     va_list locks_ptr;
-    va_start(locks_ptr, time);
+    va_start(locks_ptr, wait_time);
     for(uint i = 0; i < locks; i++) {
         locks_list[i] = va_arg(locks_ptr, pthread_rwlock_t*);
     }
@@ -343,12 +383,26 @@ int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
     int errv = errno;
     int (*rwlock_func)(pthread_rwlock_t *, const struct timespec *) = (rw ? pthread_rwlock_timedwrlock : pthread_rwlock_timedrdlock);
     for(i = 0; i < locks && locked; i++) {
-        locked = locked && rwlock_func(locks_list[i], time) == 0;
-        errv = errno;
+        struct timespec t{};
+        memcpy(&t, wait_time, sizeof(struct timespec));
+        ERR("time wait for lock: %ld\n", t.tv_sec);
+        t.tv_sec += time(nullptr);
+        ERR("time wait for lock: %ld\n", t.tv_sec);
+        int errnum;
+        errnum = rwlock_func(locks_list[i], &t);
+        WARN("locked wrlock (rw:%d): %p (errnum:%d)\n", rw, locks_list[i], errnum);
+        if (errnum == EDEADLK) {
+            WARN("This thread already owns the lock %p\n", locks_list[i]);
+            ERR("EDEADLK = %d\n", EDEADLK);
+        }
+        if (errnum != 0 && errnum != EDEADLK) {
+            locked = false;
+        }
+        errv = errnum;
     }
 
     if (!locked) {
-        ERR("Could not lock all wrlocks");
+        ERROR("Could not lock all wrlocks\n");
         i--; // the last one could no be locked
         for(; i >= 0; i--) {
             pthread_rwlock_unlock(locks_list[i]);
@@ -361,7 +415,57 @@ int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *time, ...) {
     return locked;
 }
 
-int nrwlock_unlocks(uint locks, ...) {
+int nrwlock_xlocks(int rw, int locks, ...) {
+    assert(locks > 0);
+    auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
+    if (locks_list == nullptr) {
+        perror("rwlock_rdlock calloc");
+        return 0;
+    }
+
+    va_list locks_ptr;
+    va_start(locks_ptr, locks);
+    for(uint i = 0; i < locks; i++) {
+        locks_list[i] = va_arg(locks_ptr, pthread_rwlock_t*);
+    }
+    va_end(locks_ptr);
+
+    /* Order according to locks's memory address */
+    qsort(locks_list, locks, sizeof(pthread_rwlock_t *), comp_address);
+
+    int locked = 1;
+    int i;
+    int errv = errno;
+    int (*rwlock_func)(pthread_rwlock_t *) = (rw ? pthread_rwlock_wrlock : pthread_rwlock_rdlock);
+    for(i = 0; i < locks && locked; i++) {
+        int errnum;
+        errnum = rwlock_func(locks_list[i]);
+        WARN("locked rwlock (rw:%d): %p (errnum:%d)\n", rw, locks_list[i], errnum);
+        if (errnum == EDEADLK) {
+            WARN("This thread already owns the lock %p\n", locks_list[i]);
+            ERR("EDEADLK = %d\n", EDEADLK);
+        }
+        if (errnum != 0 && errnum != EDEADLK) {
+            locked = false;
+        }
+        errv = errnum;
+    }
+
+    if (!locked) {
+        ERROR("Could not lock all wrlocks\n");
+        i--; // the last one could no be locked
+        for(; i >= 0; i--) {
+            pthread_rwlock_unlock(locks_list[i]);
+        }
+    }
+
+    free(locks_list);
+
+    errno = errv;
+    return locked;
+}
+
+int nrwlock_unlocks(int locks, ...) {
     assert(locks > 0);
     auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
     if (locks_list == nullptr) {
@@ -381,8 +485,13 @@ int nrwlock_unlocks(uint locks, ...) {
     int unlocked = 1;
     int errv = 0;
     for(int i = locks-1; i >= 0; i--) {
-        unlocked = unlocked && pthread_rwlock_unlock(locks_list[i]) == 0;
-        errv = std::max(errno, errv);
+        int errnum = pthread_rwlock_unlock(locks_list[i]);
+        if (errnum != 0) {
+            ERROR("Could not unlock lock: %p (errnum:%d)\n", locks_list[i], errnum);
+        }
+        unlocked = unlocked && errnum == 0;
+        WARN("unlocked wrlock: %p\n", locks_list[i]);
+        errv = std::max(errv, errnum);
     }
 
     free(locks_list);
@@ -391,7 +500,7 @@ int nrwlock_unlocks(uint locks, ...) {
     return unlocked;
 }
 
-int nmutex_locks(uint locks, ...) {
+int nmutex_locks(int locks, ...) {
     assert(locks > 0);
     ERRR("locks: %d\n", locks);
 
@@ -417,6 +526,7 @@ int nmutex_locks(uint locks, ...) {
     for(i = 0; i < locks && locked; i++) {
         ERRR("Locking lock at %p\n", locks_list[i]);
         locked = locked && pthread_mutex_lock(locks_list[i]) == 0;
+        WARN("locked mutex lock: %p\n", locks_list[i]);
         errv = errno;
     }
 
@@ -434,7 +544,7 @@ int nmutex_locks(uint locks, ...) {
     return locked;
 }
 
-int nmutex_unlocks(uint locks, ...) {
+int nmutex_unlocks(int locks, ...) {
     assert(locks > 0);
     ERRR("unlocks: %d\n", locks);
 
@@ -457,8 +567,13 @@ int nmutex_unlocks(uint locks, ...) {
     int errv = 0;
     for(int i = locks-1; i >= 0; i--) {
         ERRR("Unlocking lock at %p\n", locks_list[i]);
-        unlocked = unlocked && pthread_mutex_unlock(locks_list[i]) == 0;
-        errv = std::max(errno, errv);
+        int errnum = pthread_mutex_unlock(locks_list[i]);
+        if (errnum != 0) {
+            ERROR("Could not unlock lock: %p\n", locks_list[i]);
+        }
+        unlocked = unlocked && errnum == 0;
+        WARN("unlocked mutex lock: %p\n", locks_list[i]);
+        errv = std::max(errv, errnum);
     }
 
     free(locks_list);

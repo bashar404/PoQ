@@ -10,6 +10,7 @@
 #include <ctime>
 #include <cassert>
 #include <csignal>
+#include <unistd.h>
 
 #include "poet_common_definitions.h"
 
@@ -23,6 +24,8 @@
 
 #define MAX_SIZE 20000000
 #define MAX_ITERATIONS 100000
+
+#define CYCLE_WAIT_TIME 1000 /* 1 milisecond*/
 
 /*********************************************************************/
 
@@ -199,6 +202,7 @@ void arrange() {
         // if queue is empty, no node arrived, increment the time
         if (queue_is_empty(queue)) {
             current_time++;
+            usleep(CYCLE_WAIT_TIME);
             check_node_arrive();
         } else { // some sgx_table in the queue
             current_node = (int)(long) queue_front(queue);
@@ -213,6 +217,7 @@ void arrange() {
                 nodes_queue[current_time] = current_node;
                 sgx_table[current_node].time_left--; //reducing the remaining time
                 current_time++;
+                usleep(CYCLE_WAIT_TIME);
                 check_node_arrive(); // keeping track if any node joins
             }
 

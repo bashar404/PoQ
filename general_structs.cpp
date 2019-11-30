@@ -72,6 +72,11 @@ int json_to_node_t(const json_value *json, node_t *node) {
 void free_poet_context(struct poet_context *context) {
     assert(context != nullptr);
 
+    if (context->node != nullptr) {
+        free(context->node);
+        context->node = nullptr;
+    }
+
     if (context->public_key != nullptr) {
         free(context->public_key);
         context->public_key = nullptr;

@@ -71,7 +71,7 @@ static void global_variables_initialization() {
         goto error;
     }
 
-    g.server_starting_time = time(nullptr); // FIXME: maybe not necessary
+    g.server_starting_time = time(nullptr);
 
     for (int i = 0; i < MAX_THREADS; i++) {
         queue_push(threads_queue, threads + i);
@@ -85,7 +85,7 @@ static void global_variables_initialization() {
 }
 
 static void global_variables_destruction() {
-    queue_destructor(g.queue, 1);
+    queue_destructor(g.queue, 0);
     queue_destructor(threads_queue, 0);
     socket_destructor(g.server_socket);
 }
@@ -93,7 +93,7 @@ static void global_variables_destruction() {
 // Define the function to be called when ctrl-c (SIGINT) signal is sent to process
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
-//    global_variables_destruction();
+    global_variables_destruction();
     INFO("Caught signal %d\n", signum);
 
     bool sgx_table_locked = pthread_mutex_trylock(&g.sgx_table_lock) == 0;
@@ -264,7 +264,7 @@ static void *asyncronous_send_message(void *arg) {
     auto buffer = (char *) ptr_lst[1];
     auto len = (size_t) ptr_lst[2];
 
-    ERR("Sending message to socket %d with the updated data: [%.*s]\n", socket->socket_descriptor, std::min(150, (int)len), buffer);
+    ERR("Sending message to socket %d with the updated data: [%.*s]\n", socket->socket_descriptor, std::min(500, (int)len), buffer);
 
     int sent = socket_send_message(socket, buffer, len);
     if (sent <= 0) {
@@ -282,7 +282,10 @@ static void *asyncronous_send_message(void *arg) {
 static void *sgx_table_and_queue_notification(void *_) {
     int ret = 1;
     do {
-        ret = queue_wait_change(g.queue); // wait until there is a change in the nodes queue
+        do {
+            ret = queue_wait_change(g.queue); // wait until there is a change in the nodes queue
+            if (!ret) sleep(1);
+        } while(!ret);
         ERR("There was a change on the queue, sending message to all subscribers ...\n");
         ret = 0; // ignore return status
 
@@ -292,7 +295,6 @@ static void *sgx_table_and_queue_notification(void *_) {
         pthread_mutex_unlock(&g.sgx_table_lock);
 
         int state = 1;
-        time_t curr_time = time(nullptr);
 
         char *buffer = (char *) calloc(1, qs.length() + sgxt_str.length() + BUFFER_SIZE);
         state = state && buffer != nullptr;

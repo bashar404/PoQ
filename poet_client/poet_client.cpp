@@ -40,9 +40,11 @@ pthread_t blockchain_writer_thread;
 
 socket_t *node_socket = nullptr;
 socket_t *subscribe_socket = nullptr;
+bool retry_connection = true;
 sgx_enclave_id_t eid = 0;
 
 time_t server_starting_time = 0;
+time_t node_current_time = 0;
 
 uint sgxt;
 uint sgxmax;
@@ -59,7 +61,8 @@ pthread_mutex_t sgx_table_lock = PTHREAD_MUTEX_INITIALIZER;
 queue_t *queue;
 pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
 
-cond_mutex_t tmp = {PTHREAD_COND_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+uint rejoin_state = 0;
+cond_mutex_t rejoin_cond = {PTHREAD_COND_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
 
 void global_variable_initialization() {
     server_ip = (char *) malloc(18);
@@ -87,18 +90,18 @@ void global_variable_destructors() {
 }
 
 static void fill_with_rand(void *input, size_t len) {
-//    srand(time(nullptr));
-//    auto *ptr = (unsigned char *) input;
-//
-//    for (int i = 0; i < len; i++) {
-//        *(ptr + i) = rand() % 256;
-//    }
-    sgx_status_t ret = ecall_random_bytes(eid, input, len);
-    if (ret != SGX_SUCCESS) {
-        ERROR("Something happened with the enclave :c\n");
-        sgx_print_error_message(ret);
-        exit(EXIT_FAILURE);
+    srand(0);
+    auto *ptr = (unsigned char *) input;
+
+    for (int i = 0; i < len; i++) {
+        *(ptr + i) = rand() % 256;
     }
+//    sgx_status_t ret = ecall_random_bytes(eid, input, len);
+//    if (ret != SGX_SUCCESS) {
+//        ERROR("Something happened with the enclave :c\n");
+//        sgx_print_error_message(ret);
+//        exit(EXIT_FAILURE);
+//    }
 }
 
 static int poet_remote_attestation_to_server() {
@@ -250,11 +253,12 @@ static int poet_broadcast_sgxtime() {
     state = socket_send_message(node_socket, buffer, strlen(buffer)) > 0;
 
     free(buffer);
+    buffer = nullptr;
 
     size_t len;
     if (state) { // getting reply of success
-        socket_get_message(node_socket, (void **) &buffer, &len);
-        state = check_json_compliance(buffer, len);
+        state = socket_get_message(node_socket, (void **) &buffer, &len) > 0;
+        state = state && check_json_compliance(buffer, len);
         if (state) {
             json = json_parse(buffer, len);
 
@@ -278,6 +282,10 @@ static int poet_broadcast_sgxtime() {
         json_value_free(json);
     }
 
+    if (!state) {
+        ERROR("Failed to broadcast SGXtime\n");
+    }
+
     return state;
 }
 
@@ -287,7 +295,8 @@ static int poet_register_to_server() {
     state = state && poet_register_with_pk();
 
     if (state) {
-        ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound, node_id);
+        ERR("SGXmax (%u), SGXlower (%u) and Node id (%u) is received from the server\n", sgxmax, sgx_lowerbound,
+            node_id);
     }
 
     state = state && poet_remote_attestation_to_server();
@@ -331,7 +340,7 @@ static bool get_sgx_table_from_json(json_value *json, bool lock = true) {
     if (state) {
         if (lock) assertp(mutex_locks(&sgx_table_lock));
 
-        for(auto it = sgx_table.begin(); it != sgx_table.end(); it++) {
+        for (auto it = sgx_table.begin(); it != sgx_table.end(); it++) {
             assert(*it != nullptr);
             delete *it;
         }
@@ -422,6 +431,9 @@ static bool update_sgx_table_and_queue_from_txt(char *buffer, size_t len) {
         json = json_parse(buffer, len);
         state = get_queue_from_json(json, false);
         state = state && get_sgx_table_from_json(json, false);
+        if (state) {
+            node_current_time = time(nullptr) - server_starting_time;
+        }
         mutex_unlocks(&sgx_table_lock, &queue_lock);
     }
 
@@ -508,16 +520,18 @@ static bool server_close_connection() {
 static void signal_callback_handler(int signum) {
     should_terminate = 1;
     ERROR("\nReceived signal %d\n", signum);
+//    exit(EXIT_FAILURE);
 }
 
 int calculate_necessary_parameters(uint &quantum_time, uint &tier, uint &starting_time) {
     int state = 1;
 
-    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgxmax);
+    auto quantum_times = calc_quantum_times(sgx_table, ntiers, sgxmax, node_current_time, server_starting_time);
 
     tier = calc_tier_number(*sgx_table[node_id], ntiers, sgxmax);
     quantum_time = quantum_times[tier];
-    starting_time = calc_starting_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax); // TODO remove: not used
+    starting_time = calc_starting_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax, node_current_time,
+                                       server_starting_time); // TODO remove: not used
 
     return state;
 }
@@ -576,7 +590,7 @@ static void *blockchain_work(void *arg) { // thread 4
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
 
     notify_leadership_of_node();
-    uint execution_time = (uint)(long) arg;
+    uint execution_time = (uint) (long) arg;
 
     FILE *f;
     assertp((f = fopen(BLOCKCHAIN_FILE, "a")) != nullptr);
@@ -601,43 +615,62 @@ static void *blockchain_work(void *arg) { // thread 4
     flock(fileno(f), LOCK_UN); // unlocks file
     fclose(f);
 
-    pthread_cond_signal(&tmp.cond);
+    rejoin_state++;
+    pthread_cond_signal(&rejoin_cond.cond);
 
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 }
 
 static void *starting_time_calculation(void *arg) { // thread 3
     // TODO: calculate the starting time of this node
-//    uint quantum_time, tier, starting_time;
+    int oldstate;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
     assertp(mutex_locks(&sgx_table_lock, &queue_lock));
-//    calculate_necessary_parameters(quantum_time, tier, starting_time);
-//    printf("%u, %u, %u, %lu\n", quantum_time, tier, starting_time, sgx_table.size());
 
     print_sgx_table_and_queue(); // TODO delete
 
-    auto notification_times = calc_notification_times(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
-    time_t leadership_time = calc_leadership_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax);
+    if (node_id >= sgx_table.size()) {
+        ERROR("The received SGXtable is not the most recent\n");
+        pthread_exit(nullptr);
+    }
+
+    auto notification_times = calc_notification_times(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax,
+                                                      node_current_time, server_starting_time);
+    time_t leadership_time = calc_leadership_time(queue, sgx_table, *sgx_table[node_id], ntiers, sgxmax,
+                                                  node_current_time, server_starting_time);
     mutex_unlocks(&sgx_table_lock, &queue_lock);
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
+
+    if (leadership_time == -1) {
+        rejoin_state++;
+        pthread_cond_signal(&rejoin_cond.cond); // should join again since something went wrong
+        ERROR("something went wrong and we have to rejoin\n");
+        pthread_exit(nullptr);
+    }
 
     if (!notification_times.empty()) {
         ERR("last notification time <= leadership time: %d\n", notification_times.back() <= leadership_time);
-        ERR("last notification time: %lu <= leadership time: %lu\n", notification_times.back(), leadership_time);
+        ERR("last notification time: %ld <= leadership time: %lu\n", notification_times.back(), leadership_time);
     }
 
     assert(notification_times.empty() || notification_times.back() <= leadership_time);
-    for(auto & notification_time : notification_times) {
+    for (auto &notification_time : notification_times) {
         ERR("%ld\n", notification_time);
     }
     fprintf(stderr, "\n");
-    INFO("Leadership time: %lu\n", leadership_time);
+    INFO("Leadership time: %ld\n", leadership_time);
 
-    if (!notification_times.empty() && notification_times.back() == leadership_time) {
+    while (!notification_times.empty() && notification_times.back() == leadership_time) {
         notification_times.pop_back();
     }
 
     int curr_time = 0;
+    while (!notification_times.empty() && notification_times.front() == curr_time) {
+        notification_times.erase(notification_times.begin());
+    }
+
     int remaining_time = sgx_table[node_id]->time_left;
-    for(auto & notification_time : notification_times) {
+    for (auto &notification_time : notification_times) {
         assert(curr_time < notification_time);
         sleep(notification_time - curr_time);
         remaining_time -= notification_time;
@@ -653,7 +686,6 @@ static void *starting_time_calculation(void *arg) { // thread 3
 
     /* ****** BECOMES LEADER ****** */
 
-    int oldstate;
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
     pthread_create(&blockchain_writer_thread, nullptr, blockchain_work, (void *) (BLOCKCHAIN_WRITE_TIME));
     pthread_detach(blockchain_writer_thread);
@@ -664,12 +696,12 @@ static void *starting_time_calculation(void *arg) { // thread 3
     pthread_exit(nullptr);
 }
 
-void *notifications_sentinel(void * _) { // thread 2
+void *notifications_sentinel(void *_) { // thread 2
     ERR("Started to listen on secondary socket\n");
     char *buffer = nullptr;
     size_t len;
     while (should_terminate == 0) {
-        int valread = socket_get_message(subscribe_socket, (void **)&buffer, &len);
+        int valread = socket_get_message(subscribe_socket, (void **) &buffer, &len);
         if (valread < 0) {
             ERRR("Empty message from secondary socket\n");
             continue;
@@ -679,7 +711,10 @@ void *notifications_sentinel(void * _) { // thread 2
 
         int r = pthread_cancel(starting_time_calculation_thread);
         int errsv = errno;
-        if (r) {ERRR("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread), strerror(errsv), errsv);}
+        if (r) {
+            ERRR("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread),
+                 strerror(errsv), errsv);
+        }
 
         bool updated = false;
         if (buffer != nullptr) updated = update_sgx_table_and_queue_from_txt(buffer, len);
@@ -690,13 +725,55 @@ void *notifications_sentinel(void * _) { // thread 2
 
         if (updated) {
             ERR("Calling starting time calculation function\n");
-            assertp(pthread_create(&starting_time_calculation_thread, nullptr, starting_time_calculation, nullptr) == 0);
+            assertp(pthread_create(&starting_time_calculation_thread, nullptr, starting_time_calculation, nullptr) ==
+                    0);
         } else {
             ERR("starting time calculation function is NOT being called\n");
+            sleep(1);
         }
     }
 
     pthread_exit(nullptr);
+}
+
+static bool connect_to_server() {
+    static bool first_time = true;
+
+    bool connected = false;
+    bool connect1 = false;
+    bool connect2 = false;
+    int retries = 0;
+    if (retry_connection) {
+        do {
+            connect1 = connect1 ? true : socket_connect_retry(node_socket) == 0;
+            connect2 = connect2 ? true : socket_connect_retry(subscribe_socket) == 0;
+            connected = connect1 && connect2;
+        } while (!connected && first_time);
+    } else {
+        assertp(socket_connect(node_socket) == 0);
+        assertp(socket_connect(subscribe_socket) == 0);
+    }
+
+    first_time = false;
+
+    return connected;
+}
+
+static bool setup_secondary_socket() {
+    bool state = true;
+    // doing registration on subscriber channel
+    char *buffer = (char *) malloc(BUFFER_SIZE);
+    assertp(buffer != nullptr);
+    sprintf(buffer, R"({"node_id": %u})", node_id);
+    state = socket_send_message(subscribe_socket, buffer, strlen(buffer)) > 0;
+    free(buffer);
+
+    buffer = nullptr;
+    size_t len;
+    state = socket_get_message(subscribe_socket, (void **) &buffer, &len) > 0;
+    ERR("Server responded with: '%s'(%lu)\n", buffer, len);
+    free(buffer);
+    return state;
 }
 
 int main(int argc, char *argv[]) {
@@ -708,52 +785,56 @@ int main(int argc, char *argv[]) {
     atexit(global_variable_destructors);
 
     ERR("trying to establish connection with server\n");
-    assertp(socket_connect(node_socket) == 0);
-    assertp(socket_connect(subscribe_socket) == 0);
+    bool connected = connect_to_server();
+
     ERR("connection established\n");
 
     bool state = true;
     assertp(poet_register_to_server());
-
-    do { // doing registration on subscriber channel
-        char *buffer = (char *) malloc(BUFFER_SIZE);
-        assertp(buffer != nullptr);
-        sprintf(buffer, R"({"node_id": %u})", node_id);
-        assertp(socket_send_message(subscribe_socket, buffer, strlen(buffer)) > 0);
-        free(buffer);
-
-        buffer = nullptr;
-        size_t len;
-        assertp(socket_get_message(subscribe_socket, (void **) &buffer, &len) > 0);
-        ERR("Server responded with: '%s'\n", buffer);
-        free(buffer);
-    } while(false);
+    assertp(setup_secondary_socket());
 
     pthread_t notifications_checker_thread;
     assertp(pthread_create(&notifications_checker_thread, nullptr, notifications_sentinel, nullptr) == 0);
     pthread_detach(notifications_checker_thread);
 
-    while(should_terminate < 2 && state) {
-        state = poet_broadcast_sgxtime();
-//        if (state) {
-//            get_queue_and_sgx_table();
-//
-//
-//            // TODO finish
-//        }
+    while (should_terminate != 1) {
+        uint initial_state = rejoin_state;
 
-        assertp(pthread_mutex_lock(&tmp.mutex) == 0);
-        assertp(pthread_cond_wait(&tmp.cond, &tmp.mutex) == 0);
-        pthread_mutex_unlock(&tmp.mutex);
+        state = poet_broadcast_sgxtime();
+
+        assertp(pthread_mutex_lock(&rejoin_cond.mutex) == 0);
+        struct timespec dt{};
+        while (state && initial_state == rejoin_state) {
+            dt.tv_sec = time(nullptr) + 1; // must be absolute rather than relative
+            dt.tv_nsec = 0;
+            int val;
+            if ((val = pthread_cond_timedwait(&rejoin_cond.cond, &rejoin_cond.mutex, &dt)) != 0) {
+                ERRR("val: %d (%s)\n", val, strerror(val));
+            }
+
+            if (initial_state == rejoin_state) {
+                ERRR("cond timedwait timedout\n");
+            }
+        }
+        pthread_mutex_unlock(&rejoin_cond.mutex);
         ERR("received signal to generate new sgx time\n");
 
-        should_terminate++;
+        if (!state) {
+            static int retries = 0;
+            ERROR("something went wrong in the poet_broadcast_time\n");
+            if (retries > 10) {
+//                should_terminate = 1;
+                /* trying to reconnect to the server */
+                should_terminate = !(connect_to_server() && setup_secondary_socket());
+                if (!should_terminate) {
+                    retries = 0;
+                }
+            }
+            retries++;
+        }
     }
 
 //    state = state && get_queue_and_sgx_table();
-    if (state) {
-
-    }
 
 //    state = state && server_close_connection();
 

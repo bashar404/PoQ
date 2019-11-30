@@ -30,11 +30,38 @@ extern "C" {
 #include "socket_t.h"
 #include "queue_t.h"
 
-#define ERROR(...) /**/
-
 #define DEFAULT_ADDRESS INADDR_ANY
 
 // TODO: set C preprocessor conditionals for SSL
+
+static int create_primitive_socket(int domain, int type, int protocol, int *opt) {
+    int errsv = 0;
+    int fd = socket(domain, type, protocol);
+    errsv = errno;
+    if (fd == -1) goto error;
+
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, opt, sizeof(*opt))) {
+        errsv = max(errsv, errno);
+        goto error;
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, opt, sizeof(*opt))) {
+        errsv = max(errsv, errno);
+        goto error;
+    }
+
+    return fd;
+
+    error:
+    if (fd != -1) {
+        close(fd);
+    }
+
+    errno = errsv;
+    perror("create_primitive_socket");
+    errno = errsv;
+    return -1;
+}
 
 socket_t *socket_constructor(int domain, int type, int protocol, const char *ip, int port) {
     socket_t *s = (socket_t *) malloc(sizeof(socket_t));
@@ -42,12 +69,13 @@ socket_t *socket_constructor(int domain, int type, int protocol, const char *ip,
 
     memset(s, 0, sizeof(socket_t));
 
-    s->socket_descriptor = socket(domain, type, protocol);
-    if (s->socket_descriptor == 0) goto error;
+    s->domain = domain;
+    s->type = type;
+    s->protocol = protocol;
 
-    if (setsockopt(s->socket_descriptor, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-                   &(s->opt), sizeof(s->opt)))
-        goto error;
+    s->opt = 1; /* 1 to enable options */
+    s->socket_descriptor = create_primitive_socket(domain, type, protocol, &(s->opt));
+    if (s->socket_descriptor == -1) goto error;
 
     struct sockaddr_in *address = &(s->address);
     address->sin_family = domain;
@@ -214,15 +242,58 @@ int socket_connect(socket_t *soc) {
     }
 
     int ret;
-    if ((ret = connect(soc->socket_descriptor, (struct sockaddr *) &(soc->address), soc->addrlen)) != 0) {
-        goto error;
+    int errsv = 0;
+    if ( (ret = connect(soc->socket_descriptor, (struct sockaddr *) &(soc->address), soc->addrlen)) != 0) {
+        errsv = errno;
+        if (errsv == EISCONN) {
+            errsv = 0;
+            ret = 0;
+        } else {
+            ERR("connect error code is: %d (%s)\n", errsv, strerror(errsv));
+            goto error;
+        }
     }
 
     return ret;
 
     error:
     perror("socket connect");
+    errno = errsv;
     return ret;
+}
+
+int socket_connect_retry(socket_t *soc) {
+    assert(soc != NULL);
+
+    int errsv = 0;
+    int retries = 0;
+    int connected = 0;
+    do {
+        int ret = socket_connect(soc);
+        connected = ret;
+        if (connected != 0) {
+            /* Source: http://man7.org/linux/man-pages/man2/connect.2.html
+             * If connect() fails, consider the state of the socket as unspecified.
+             * Portable applications should close the socket and create a new one
+             * for reconnecting. */
+            close(soc->socket_descriptor);
+            int new_fd = create_primitive_socket(soc->domain, soc->type, soc->protocol, &(soc->opt));
+            if (new_fd == -1) {
+                errsv = errno;
+                goto error;
+            }
+
+            soc->socket_descriptor = new_fd;
+            sleep(1);
+        }
+        retries++;
+    } while(connected != 0 && retries < RETRIES_THRESHOLD);
+
+    error:
+    errno = errsv;
+    perror("socket_connect_retry");
+    errno = errsv;
+    return connected;
 }
 
 int socket_recv(socket_t *soc, void *buffer, int buffer_len, int flags) {
@@ -465,7 +536,7 @@ int socket_send_message_custom(socket_t *soc, void *buffer, size_t buffer_len, i
 }
 
 int socket_send_message(socket_t *soc, void *buffer, size_t buffer_len) {
-    return socket_send_message_custom(soc, buffer, buffer_len, MSG_DONTWAIT);
+    return socket_send_message_custom(soc, buffer, buffer_len, MSG_DONTWAIT & 0);
 }
 
 void socket_close(socket_t *soc) {

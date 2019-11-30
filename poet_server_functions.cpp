@@ -10,6 +10,8 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <set>
+#include <zconf.h>
 
 #define POET_PREFIX(X) poet_ ## X
 #define FUNC_PAIR(NAME)  { #NAME, POET_PREFIX(NAME) }
@@ -192,21 +194,114 @@ int POET_PREFIX(remote_attestation)(json_value *json, socket_t *socket, poet_con
     return state;
 }
 
+std::map<void *, int> repetitions;
+
+int queue_delete_continuous_nodes(int first, void *d) {
+    static void *previous;
+    if (first) {
+        previous = d;
+        repetitions.clear();
+        repetitions[d] = 1;
+        return 0;
+    }
+
+    repetitions[d]++;
+
+    if (previous == d) {
+        assert(repetitions[d] > 1);
+        repetitions[d]--;
+        return 1;
+    }
+
+    previous = d;
+    return 0;
+}
+
+int queue_delete_repeated_nodes(int _, void *d) {
+    if (repetitions[d] > 1) {
+        repetitions[d]--;
+        return 1;
+    }
+
+    return 0;
+}
+
+static bool queue_cleanup(bool lock = true) {
+    if (lock) {
+        struct timespec t = {5, 0};
+        assertp(rwlock_rwlocks(g.queue->lock));
+        assertp(mutex_locks(&g.sgx_table_lock, &g.queue->cond.cond_mutex));
+    }
+
+    ERR("Cleaning up the queue\n");
+
+    if (!g.sgx_table.empty()) {
+//        time_t current_time = time(nullptr) - g.server_starting_time;
+//
+//        uint minimum_arrival_time = -1;
+//        for (auto &node : g.sgx_table) {
+//            minimum_arrival_time = std::min(minimum_arrival_time, node->arrival_time);
+//        }
+//
+//        bool finished = false;
+//        while (!finished && !queue_is_empty(g.queue)) {
+//            int id = (int) (long) queue_front(g.queue);
+//            assert(id < g.sgx_table.size());
+//            node_t &u = *g.sgx_table[id];
+//            uint arrival_t = u.arrival_time;
+//            time_t leadership_t = calc_leadership_time(g.queue, g.sgx_table, u, g.n_tiers, g.sgxmax,
+//                                                       minimum_arrival_time, g.server_starting_time);
+//            ERR("Cleaning node %u: arrival_t: %u | leadership_t: %ld | current_time: %ld | minimum_arrival_time: %u\n",
+//                u.node_id, arrival_t, leadership_t, current_time, minimum_arrival_time);
+//            finished = arrival_t + leadership_t >= current_time;
+//            if (!finished) {
+//                queue_pop(g.queue);
+//            }
+//        }
+
+//        bool finished = queue_is_empty(g.queue);
+//        int id = (int)(long) queue_front_and_pop(g.queue);
+//        while(!finished && queue_size(g.queue) > g.sgx_table.size() +1) {
+//            int next = (int)(long) queue_front(g.queue);
+//            if (id == next) {
+//                queue_pop(g.queue);
+//                id = next;
+//            }
+//        }
+
+        queue_pop_custom(g.queue, 0, 0);
+        int deleted = queue_selective_remove(g.queue, queue_delete_continuous_nodes, 0, 0);
+        deleted += queue_selective_remove(g.queue, queue_delete_repeated_nodes, 0, 0);
+        ERR("deleted %d elements from the queue\n", deleted);
+    } else {
+        WARN("SGXtable is empty\n");
+    }
+
+    if (lock) {
+        mutex_unlocks(&g.sgx_table_lock, &g.queue->cond.cond_mutex);
+        rwlock_unlocks(g.queue->lock);
+    }
+}
+
+static void copy_queuet_std_set(void *node_ptr, void *std_queue_ptr) {
+    auto &v = *((std::set<uint> *) std_queue_ptr);
+    auto node = (uint) ((long long) (node_ptr));
+
+    v.insert(node);
+}
+
 static bool insert_node_into_sgx_table_and_queue(node_t &node) {
     ERR("Adding node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into SGX table\n", node.node_id,
         node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
 
     bool state = true;
 
+    struct timespec t = {3, 0};
     assertp(state = mutex_locks(&g.sgx_table_lock, g.queue->cond.cond_mutex));
+    assertp(rwlock_rwlocks(g.queue->lock));
     if (state) {
         if (node.node_id < g.sgx_table.size()) {
             ERR("The node %d is already in the SGXtable\n", node.node_id);
-            if (((node_t *) queue_front(g.queue))->node_id == node.node_id) {
-                INFO("node %d in the beggining of the queue, dequeuing ... \n", node.node_id);
-                assert(g.sgx_table[node.node_id]->node_id == node.node_id);
-                queue_pop(g.queue);
-            }
             node_t *n = g.sgx_table[node.node_id];
             assert(n->node_id == node.node_id);
             assert(node.sgx_time == node.time_left);
@@ -214,20 +309,49 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
             n->arrival_time = node.arrival_time;
             n->time_left = node.time_left;
             n->n_leadership++;
-            queue_push(g.queue, &node);
+            if (queue_size_custom(g.queue, 0) >= g.sgx_table.size()) {
+                queue_pop_custom(g.queue, 0, 0);
+            }
+            queue_push_custom(g.queue, (void *) node.node_id, 0, 0);
+            queue_cleanup(false);
+            queue_broadcast(g.queue);
         } else {
-            g.sgx_table.push_back(&node);
-            assert(g.sgx_table.back() == &node);
-            queue_push(g.queue, &node);
+            auto new_node = (node_t *) calloc(1, sizeof(node_t));
+            assert(new_node != nullptr);
+            memcpy(new_node, &node, sizeof(node_t));
+            g.sgx_table.push_back(new_node);
+            assert(g.sgx_table.back() == new_node);
+            queue_push_custom(g.queue, (void *) node.node_id, 0, 0);
+            queue_cleanup(false);
+            queue_broadcast(g.queue);
             ERR("Inserted node (ID: %u, SGXt: %u, At: %u, TL: %u, NOL: %u) into the SGX table and Queue\n",
                 node.node_id,
                 node.sgx_time, node.arrival_time, node.time_left, node.n_leadership);
         }
 
-        mutex_unlocks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
+        if (queue_size_custom(g.queue, 0) < g.sgx_table.size()) {
+            std::set<uint> v;
+            queue_print_func_dump_custom((queue_t *) g.queue, copy_queuet_std_set, &v, 0);
+
+            uint rt_sum = 0;
+            for (int i = 0; i < g.sgx_table.size(); i++) {
+                rt_sum += g.sgx_table[i]->time_left;
+            }
+
+            for (int i = 0; i < g.sgx_table.size(); i++) {
+                if (v.count(i) == 0 && g.sgx_table[i]->arrival_time) { /* Fills the queue with missing elements */
+                    queue_push_custom(g.queue, (void *) i, 0, 0);
+                    ERR("Node %d is missing from the Queue\n", i);
+                }
+            }
+        }
     } else {
         perror("insert_node_into_sgx_table_and_queue");
     }
+
+    error:
+    rwlock_unlocks(g.queue->lock);
+    mutex_unlocks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
 
     return state;
 }
@@ -284,7 +408,7 @@ int POET_PREFIX(sgx_time_broadcast)(json_value *json, socket_t *socket, poet_con
         if (state) {
             sprintf(msg,
                     R"({"status":"success", "data": {"n_nodes": %u, "n_tiers": %u, "arrival_times": %s, "quantum_times": %s}})",
-                    node.node_id + 1, g.n_tiers, arrival_times.c_str(), quantum_times.c_str()); // TODO: complete
+                    g.current_id, g.n_tiers, arrival_times.c_str(), quantum_times.c_str()); // TODO: complete
         }
     }
 
@@ -372,12 +496,16 @@ static void print_queue_value_into_buffer(void *d, void *string_ptr) {
 
     std::string &queue_str = *((std::string *) string_ptr);
 
-    if (d == nullptr) {
-        WARN("Node with NULL value!!\n");
-        return;
+    int id = (int) (long) d;
+    if (id >= g.sgx_table.size()) {
+        WARN("id (%d) does not exist in current SGXtable (%lu) ... retrying\n", id, g.sgx_table.size());
+        usleep(50);
+        if (id >= g.sgx_table.size()) {
+            WARN("id (%d) does not exist in current SGXtable (%lu) ... ABORTING\n", id, g.sgx_table.size());
+            return;
+        }
     }
-
-    node_t node = *((node_t *) d);
+    node_t &node = *g.sgx_table[id];
 
     bool valid = true;
     char *buffer = (char *) malloc(BUFFER_SIZE);
@@ -510,17 +638,29 @@ int POET_PREFIX(unfinished_node)(json_value *json, socket_t *socket, poet_contex
 
     state = json_to_node_t(json, &new_node);
 
-    mutex_locks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
+    assertp(mutex_locks(&g.sgx_table_lock, g.queue->cond.cond_mutex));
+    assertp(rwlock_rwlocks(g.queue->lock));
     if (state && new_node.node_id < g.sgx_table.size()) {
         node_t *dest = g.sgx_table[new_node.node_id];
         assert(dest != nullptr);
-        memcpy(dest, &new_node, sizeof(node_t));
-        queue_pop(g.queue);
-        queue_push(g.queue, dest);
+
+        assert(dest->node_id == new_node.node_id);
+        assert(dest->arrival_time != new_node.arrival_time || dest->time_left >= new_node.time_left);
+        if (dest->sgx_time == new_node.sgx_time && dest->arrival_time == new_node.arrival_time) {
+            dest->time_left = new_node.time_left;
+            queue_cleanup(false);
+            queue_push_custom(g.queue, (void *) dest->node_id, 0, 0);
+        } else {
+            state = false;
+        }
+
     } else {
         state = false;
     }
+    rwlock_unlocks(g.queue->lock);
     mutex_unlocks(&g.sgx_table_lock, g.queue->cond.cond_mutex);
+
+    if (state) queue_broadcast(g.queue);
 
     const char *msg = nullptr;
     if (state) {
@@ -528,7 +668,9 @@ int POET_PREFIX(unfinished_node)(json_value *json, socket_t *socket, poet_contex
     } else {
         msg = R"({"status": "failure"})";
     }
+
     socket_send_message(socket, (void *) msg, strlen(msg));
+    return state;
 }
 
 struct function_handle poet_functions[] = {

@@ -37,11 +37,11 @@ json_value * check_json_success_status(char *buffer, size_t len);
 
 int calc_tier_number(const node_t &node, uint total_tiers, uint sgx_max);
 
-std::vector<uint> calc_quantum_times(const std::vector<node_t *> &sgx_table, uint ntiers, uint sgx_max);
+std::vector<uint> calc_quantum_times(const std::vector<node_t *> &sgx_table, uint ntiers, uint sgx_max, time_t, time_t);
 
-time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max);
-std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max);
-time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max);
+time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint tiers, uint sgx_max, time_t, time_t);
+std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max, time_t, time_t);
+time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max, time_t, time_t);
 
 int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *));
 int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(void *), bool);
@@ -72,15 +72,18 @@ int delegate_thread_to_function(pthread_t *thread, void *data, void * (*func)(vo
 
 #define rwlock_timedrdlocks(...) nrwlock_timedxlocks(0, PP_NARG(__VA_ARGS__) -1, __VA_ARGS__)
 #define rwlock_timedrwlocks(...) nrwlock_timedxlocks(1, PP_NARG(__VA_ARGS__) -1, __VA_ARGS__)
+#define rwlock_rdlocks(...) nrwlock_xlocks(0, PP_NARG(__VA_ARGS__), __VA_ARGS__)
+#define rwlock_rwlocks(...) nrwlock_xlocks(1, PP_NARG(__VA_ARGS__), __VA_ARGS__)
 #define rwlock_unlocks(...) nrwlock_unlocks(PP_NARG(__VA_ARGS__), __VA_ARGS__)
 
-int nrwlock_timedxlocks(int rw, uint locks, const struct timespec *, ...);
-int nrwlock_unlocks(uint locks, ...);
+int nrwlock_timedxlocks(int rw, int locks, const struct timespec *, ...);
+int nrwlock_xlocks(int rw, int locks, ...);
+int nrwlock_unlocks(int locks, ...);
 
 #define mutex_locks(...) nmutex_locks(PP_NARG(__VA_ARGS__), __VA_ARGS__)
 #define mutex_unlocks(...) nmutex_unlocks(PP_NARG(__VA_ARGS__), __VA_ARGS__)
 
-int nmutex_locks(uint locks, ...);
-int nmutex_unlocks(uint locks, ...);
+int nmutex_locks(int locks, ...);
+int nmutex_unlocks(int locks, ...);
 
 #endif //POET_CODE_POET_SHARED_FUNCTIONS_H

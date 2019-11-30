@@ -20,18 +20,18 @@
 
 #define BUFFER_SIZE 1024
 
-#define __STDERR_MSG(type, format, ...) do {fprintf(stderr, type " [0x%lx|%s:%3d] " format, pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__, \
+#define __STDERR_MSG(out, type, format, ...) do {fprintf(out, type " [0x%lx|%s:%3d] " format, pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__, \
                                             ##__VA_ARGS__);} while(0)
 
 #ifdef DEBUG
-#define ERRR(...) __STDERR_MSG("DEBUG2 ", __VA_ARGS__)
+#define ERRR(...) __STDERR_MSG(stdout, "DEBUG2 ", __VA_ARGS__)
 #define DEBUG1
 #else
 #define ERRR(...) /**/
 #endif
 
 #ifdef DEBUG1
-#define ERR(...) __STDERR_MSG("DEBUG1 ", __VA_ARGS__)
+#define ERR(...) __STDERR_MSG(stdout, "DEBUG1 ", __VA_ARGS__)
 #define WARNING
 #ifndef DEBUG
 #define DEBUG
@@ -41,7 +41,7 @@
 #endif
 
 #ifdef WARNING
-#define WARN(...) __STDERR_MSG("WARNING",  __VA_ARGS__)
+#define WARN(...) __STDERR_MSG(stderr, "WARNING",  __VA_ARGS__)
 #ifndef DEBUG
 #define DEBUG
 #endif
@@ -49,9 +49,9 @@
 #define WARN(...) /**/
 #endif
 
-#define ERROR(...) __STDERR_MSG("ERROR  ",  __VA_ARGS__)
+#define ERROR(...) __STDERR_MSG(stderr, "ERROR  ",  __VA_ARGS__)
 
-#define INFO(...) __STDERR_MSG("INFO   ", __VA_ARGS__)
+#define INFO(...) __STDERR_MSG(stdout, "INFO   ", __VA_ARGS__)
 
 #define STR(X) (#X)
 
