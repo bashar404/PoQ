@@ -14,12 +14,14 @@
 #include "socket_t.h"
 #include "queue_t.h"
 #include "poet_shared_functions.h"
-#include "enclave_helper.h"
 
+#ifndef NO_SGX
+#include "enclave_helper.h"
 #include "sgx_error.h"       /* sgx_status_t */
 #include "sgx_eid.h"     /* sgx_enclave_id_t */
 #include "sgx_urts.h"
 #include "enclave_u.h"
+#endif
 
 #include "poet_common_definitions.h"
 
@@ -42,7 +44,9 @@ pthread_t blockchain_writer_thread;
 socket_t *node_socket = nullptr;
 socket_t *subscribe_socket = nullptr;
 bool retry_connection = true;
+#ifndef NO_SGX
 sgx_enclave_id_t eid = 0;
+#endif
 
 time_t server_starting_time = 0;
 time_t node_current_time = 0;
@@ -81,13 +85,17 @@ void global_variable_initialization() {
     queue = queue_constructor();
     assertp(queue != nullptr);
 
+#ifndef NO_SGX
     /* Initialize the enclave */
     assertp(initialize_enclave(&eid) >= 0);
+#endif
 }
 
 void global_variable_destructors() {
     socket_destructor(node_socket);
+#ifndef NO_SGX
     sgx_destroy_enclave(eid);
+#endif
 }
 
 static unsigned char randbyte() {
@@ -99,17 +107,20 @@ static unsigned char randbyte() {
 }
 
 static void fill_with_rand(void *input, size_t len) {
+#ifdef NO_SGX
     auto *ptr = (unsigned char *) input;
 
     for (int i = 0; i < len; i++) {
         *(ptr + i) = randbyte();
     }
-//    sgx_status_t ret = ecall_random_bytes(eid, input, len);
-//    if (ret != SGX_SUCCESS) {
-//        ERROR("Something happened with the enclave :c\n");
-//        sgx_print_error_message(ret);
-//        exit(EXIT_FAILURE);
-//    }
+#else
+    sgx_status_t ret = ecall_random_bytes(eid, input, len);
+    if (ret != SGX_SUCCESS) {
+        ERROR("Something happened with the enclave :c\n");
+        sgx_print_error_message(ret);
+        exit(EXIT_FAILURE);
+    }
+#endif
 }
 
 static int poet_remote_attestation_to_server() {
@@ -161,12 +172,7 @@ static int poet_remote_attestation_to_server() {
 
 static uint generate_random_sgx_time() { // TODO: change for the new version with a tuple
     uint sgx_time = 0;
-    sgx_status_t ret = ecall_random_bytes(eid, &sgx_time, sizeof(sgx_time));
-    if (ret != SGX_SUCCESS) {
-        ERROR("Something happened with the enclave :c\n");
-        sgx_print_error_message(ret);
-        exit(EXIT_FAILURE);
-    }
+    fill_with_rand(&sgx_time, sizeof(sgx_time));
     sgx_time = sgx_lowerbound + sgx_time % (sgxmax - sgx_lowerbound + 1);
 
     return sgx_time;
