@@ -144,7 +144,7 @@ std::vector<uint> calc_quantum_times(const std::vector<node *> &sgx_table, uint 
     return quantum_times;
 }
 
-static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntiers, uint sgx_max) {
+static uint calc_qt(node_t *u, const std::vector<uint> &quantum_times, uint ntiers, uint sgx_max) { /* FIXME Outdated */
     assert(u != nullptr);
 
     int tier = calc_tier_number(*u, ntiers, sgx_max);
@@ -176,8 +176,16 @@ time_t calc_leadership_time(queue_t *queue, const std::vector<node_t *> &sgx_tab
     int remaining_time = current_node.time_left;
     uint minimum_arrival_time = current_node.arrival_time;
 
+    uint remaining_times_sum = 0;
     for(int i = 0; i < sgx_table.size(); i++) {
-        minimum_arrival_time = std::min(minimum_arrival_time, sgx_table[i]->arrival_time);
+        remaining_times_sum += sgx_table[i]->time_left;
+    }
+
+    for(int i = 0; i < sgx_table.size(); i++) {
+        uint arrival_t = sgx_table[i]->arrival_time;
+        if (arrival_t >= std::max(0, (int)(node_current_time - remaining_times_sum))) { /* Check if the other node seems to be still a participant*/
+            minimum_arrival_time = std::min(minimum_arrival_time, arrival_t);
+        }
     }
 
     bool found_myself = false;
@@ -237,8 +245,16 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
     int accumulated_time = 0;
     uint minimum_arrival_time = current_node.arrival_time;
 
+    uint remaining_times_sum = 0;
     for(int i = 0; i < sgx_table.size(); i++) {
-        minimum_arrival_time = std::min(minimum_arrival_time, sgx_table[i]->arrival_time);
+        remaining_times_sum += sgx_table[i]->time_left;
+    }
+
+    for(int i = 0; i < sgx_table.size(); i++) {
+        uint arrival_t = sgx_table[i]->arrival_time;
+        if (arrival_t >= std::max(0, (int)(node_current_time - remaining_times_sum))) { /* Check if the other node seems to be still a participant*/
+            minimum_arrival_time = std::min(minimum_arrival_time, arrival_t);
+        }
     }
 
     long comm_delay = node_current_time - minimum_arrival_time;
@@ -277,6 +293,7 @@ std::vector<time_t> calc_notification_times(queue_t *queue, const std::vector<no
 }
 
 /* TODO should rather be all the starting times of the current node */
+/* FIXME Outdated */
 time_t calc_starting_time(queue_t *queue, const std::vector<node_t *> &sgx_table, const node_t &current_node, uint ntiers, uint sgx_max, time_t node_current_time, time_t server_starting_time) {
     assert(queue != nullptr);
     std::queue<uint> q;

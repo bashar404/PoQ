@@ -11,6 +11,7 @@
 #include <cassert>
 #include <csignal>
 #include <unistd.h>
+#include <random>
 
 #include "poet_common_definitions.h"
 
@@ -49,10 +50,15 @@ static int calc_tier_number(node_t *node);
 
 uint randint(int start, int end) {
     assert(start <= end);
+    static std::random_device rand_dev;
+    static std::mt19937 generator(rand_dev());
+
     start = std::max(0, std::min(start, RAND_MAX));
     end = std::max(0, std::min(end, RAND_MAX));
 
-    return end > 0 ? start + rand() % end : 0;
+    std::uniform_int_distribution<int> distr(start, end);
+//    return end > 0 ? start + rand() % end : 0;
+    return end > 0 ? distr(generator) : 0;
 }
 
 void get_input_from_user(int prompt) {

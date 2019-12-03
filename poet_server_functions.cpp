@@ -309,9 +309,6 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
             n->arrival_time = node.arrival_time;
             n->time_left = node.time_left;
             n->n_leadership++;
-            if (queue_size_custom(g.queue, 0) >= g.sgx_table.size()) {
-                queue_pop_custom(g.queue, 0, 0);
-            }
             queue_push_custom(g.queue, (void *) node.node_id, 0, 0);
             queue_cleanup(false);
             queue_broadcast(g.queue);
@@ -338,8 +335,11 @@ static bool insert_node_into_sgx_table_and_queue(node_t &node) {
                 rt_sum += g.sgx_table[i]->time_left;
             }
 
+            time_t current_time = time(nullptr) - g.server_starting_time;
+
             for (int i = 0; i < g.sgx_table.size(); i++) {
-                if (v.count(i) == 0 && g.sgx_table[i]->arrival_time) { /* Fills the queue with missing elements */
+                uint arrival_t = g.sgx_table[i]->arrival_time;
+                if (v.count(i) == 0 && arrival_t >= std::max(0, (int)(current_time - rt_sum))) { /* Fills the queue with missing elements iff is considered to be still active */
                     queue_push_custom(g.queue, (void *) i, 0, 0);
                     ERR("Node %d is missing from the Queue\n", i);
                 }

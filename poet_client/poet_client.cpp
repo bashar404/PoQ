@@ -9,6 +9,7 @@
 #include <string>
 #include <csignal>
 #include <sys/file.h>
+#include <random>
 
 #include "socket_t.h"
 #include "queue_t.h"
@@ -89,12 +90,19 @@ void global_variable_destructors() {
     sgx_destroy_enclave(eid);
 }
 
+static unsigned char randbyte() {
+    static std::random_device rand_dev;
+    static std::mt19937 generator(rand_dev());
+
+    std::uniform_int_distribution<int> distr(0, 255);
+    return distr(generator);
+}
+
 static void fill_with_rand(void *input, size_t len) {
-    srand(0);
     auto *ptr = (unsigned char *) input;
 
     for (int i = 0; i < len; i++) {
-        *(ptr + i) = rand() % 256;
+        *(ptr + i) = randbyte();
     }
 //    sgx_status_t ret = ecall_random_bytes(eid, input, len);
 //    if (ret != SGX_SUCCESS) {
@@ -165,13 +173,14 @@ static uint generate_random_sgx_time() { // TODO: change for the new version wit
 }
 
 static int poet_register_with_pk() {
+    static bool first_time = true;
     char *buffer = (char *) malloc(BUFFER_SIZE);
     int state = 1;
 
     public_key_t &pk = public_key;
-    fill_with_rand(&pk, sizeof(public_key_t)); // TODO: change
+    if (first_time) fill_with_rand(&pk, sizeof(public_key_t)); // TODO: change
     signature_t &sign = signature;
-    fill_with_rand(&sign, sizeof(signature_t));
+    if (first_time) fill_with_rand(&sign, sizeof(signature_t));
 
     unsigned char *pk_64base = encode_64base(&pk, sizeof(pk));
     unsigned char *sign_64base = encode_64base(&sign, sizeof(sign));
@@ -229,16 +238,18 @@ static int poet_register_with_pk() {
     }
 
     json_value_free(json);
+
+    first_time = false;
     return state;
 }
 
-static int poet_broadcast_sgxtime() {
+static int poet_broadcast_sgxtime(bool regenerate = true) {
     char *buffer;
     int state = 1;
     json_value *json = nullptr;
     json_value *json_status = nullptr;
 
-    sgxt = generate_random_sgx_time();
+    sgxt = regenerate ? generate_random_sgx_time() : sgxt;
     ERR("SGXt is generated: %u\n", sgxt);
 
     buffer = (char *) malloc(BUFFER_SIZE);
@@ -642,8 +653,10 @@ static void *starting_time_calculation(void *arg) { // thread 3
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 
     if (leadership_time == -1) {
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
         rejoin_state++;
         pthread_cond_signal(&rejoin_cond.cond); // should join again since something went wrong
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
         ERROR("something went wrong and we have to rejoin\n");
         pthread_exit(nullptr);
     }
@@ -678,7 +691,7 @@ static void *starting_time_calculation(void *arg) { // thread 3
 
         WARN("Notifying server of readdition: %d\n", curr_time);
         if (remaining_time > 0) {
-            notify_readdition_of_node_into_queue(remaining_time);
+//            notify_readdition_of_node_into_queue(remaining_time);
         }
     }
 
@@ -703,16 +716,17 @@ void *notifications_sentinel(void *_) { // thread 2
     while (should_terminate == 0) {
         int valread = socket_get_message(subscribe_socket, (void **) &buffer, &len);
         if (valread < 0) {
-            ERRR("Empty message from secondary socket\n");
+            ERR("Empty message from secondary socket\n");
             continue;
         }
 
         ERR("Broadcast message received in node %d\n", node_id);
 
+        WARN("Interrupting Starting Time Calculation thread ... \n");
         int r = pthread_cancel(starting_time_calculation_thread);
         int errsv = errno;
         if (r) {
-            ERRR("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread),
+            WARN("The thread `%s' could not be canceled: %s(%d)\n", STR(starting_time_calculation_thread),
                  strerror(errsv), errsv);
         }
 
@@ -797,10 +811,12 @@ int main(int argc, char *argv[]) {
     assertp(pthread_create(&notifications_checker_thread, nullptr, notifications_sentinel, nullptr) == 0);
     pthread_detach(notifications_checker_thread);
 
+    bool regenerate_sgxt = true;
     while (should_terminate != 1) {
         uint initial_state = rejoin_state;
 
-        state = poet_broadcast_sgxtime();
+        state = poet_broadcast_sgxtime(regenerate_sgxt);
+        regenerate_sgxt = true;
 
         assertp(pthread_mutex_lock(&rejoin_cond.mutex) == 0);
         struct timespec dt{};
@@ -822,12 +838,13 @@ int main(int argc, char *argv[]) {
         if (!state) {
             static int retries = 0;
             ERROR("something went wrong in the poet_broadcast_time\n");
-            if (retries > 10) {
+            if (retries > 100) {
 //                should_terminate = 1;
                 /* trying to reconnect to the server */
-                should_terminate = !(connect_to_server() && setup_secondary_socket());
+                should_terminate = !(connect_to_server() && poet_register_to_server() && setup_secondary_socket());
                 if (!should_terminate) {
                     retries = 0;
+                    regenerate_sgxt = false;
                 }
             }
             retries++;
