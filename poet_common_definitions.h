@@ -12,16 +12,26 @@
 #include <string.h>
 #include <pthread.h>
 #include <assert.h>
+#include <unistd.h>
+#include <errno.h>
+#include <semaphore.h>
+#include <stdlib.h>
 #else
 #include <pthread.h>
 #include <cstring>
 #include <cassert>
+#include <unistd.h>
+#include <cerrno>
+#include <semaphore.h>
+#include <cstdlib>
 #endif
 
 #define BUFFER_SIZE 1024
 
 #define __STDERR_MSG(out, type, format, ...) do {fprintf(out, type " [0x%lx|%s:%3d] " format, pthread_self(), (strrchr(__FILE__, '/') != NULL ? strrchr(__FILE__, '/')+1 : __FILE__), __LINE__, \
                                             ##__VA_ARGS__);} while(0)
+
+#define __GENERAL_MSG(out, type, format, ...) do {fprintf(out, type " " format, ##__VA_ARGS__);} while(0)
 
 #ifdef DEBUG
 #define ERRR(...) __STDERR_MSG(stdout, "DEBUG2 ", __VA_ARGS__)
@@ -62,6 +72,23 @@
 #else
 #define assertp(expr) do { int _val = (expr); if (!_val) {((!errno) ? exit(EXIT_FAILURE) : exit(errno));} } while(0)
 #endif
+
+FILE *__get_log_file(int);
+sem_t *__get_logfile_semaphore(int);
+
+#define REPORT(...) \
+do { \
+    int oldstate;\
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);\
+    sem_t *sem = __get_logfile_semaphore(0);\
+    sem_wait(sem);\
+    FILE* out = __get_log_file(0); \
+    __GENERAL_MSG(out, "REPORT ", __VA_ARGS__);\
+    fflush(out);\
+    sem_post(sem);\
+    pthread_setcancelstate(oldstate, &oldstate);\
+} while(0)
+
 
 #ifndef __cplusplus
 # ifndef max

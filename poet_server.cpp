@@ -313,6 +313,7 @@ static void *sgx_table_and_queue_notification(void *_) {
 
         if (state) {
             std::queue<pthread_t *> q;
+            REPORT("SGXtable [%lu]:\n%s\n", time(nullptr) - g.server_starting_time, buffer);
 
             assertp(pthread_rwlock_rdlock(&g.secondary_socket_comms_lock) == 0);
             for (auto pair = g.secondary_socket_comms.begin(); pair != g.secondary_socket_comms.end(); pair++) {
@@ -417,6 +418,8 @@ static void *secondary_socket_sentinel(void *_) {
     }
 }
 
+
+
 int main(int argc, char *argv[]) {
     // TODO: receive command line arguments for variable initialization
 
@@ -434,6 +437,7 @@ int main(int argc, char *argv[]) {
         goto error;
     }
     INFO("Starting to listen\n");
+    REPORT("I am the server\n");
 
     pthread_t secondary_socket_thread;
     assertp(pthread_create(&secondary_socket_thread, nullptr, secondary_socket_sentinel, nullptr) == 0);

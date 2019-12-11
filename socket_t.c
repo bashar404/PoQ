@@ -329,6 +329,8 @@ int socket_recv(socket_t *soc, void *buffer, int buffer_len, int flags) {
         ERRR( "valread: %d\n", valread);
     }
 
+    REPORT("Received raw data = %d\n", valread);
+
     errno = errsv;
     return valread;
 }
@@ -343,7 +345,6 @@ static char *concat_buffers(queue_t *queue) {
     }
     memset(buffer, ENDING_CHARACTER, expected_size);
 
-    unsigned char c;
     size_t pos = 0;
     while (!queue_is_empty(queue)) {
         char *current_buffer = queue_front(queue);
@@ -442,6 +443,7 @@ int socket_get_message_custom(socket_t *soc, void **buffer, size_t *buff_size, i
 
     terminate:
     queue_destructor(buffer_queue, 1);
+    REPORT("Received data on message: %lu\n", current_size);
     return current_size;
 }
 
@@ -470,6 +472,7 @@ int socket_send(socket_t *soc, const void *buffer, size_t buffer_len, int flags)
     }
 
     errno = errsv;
+    REPORT("Sent raw data: %d\nRaw data lost: %lu\n", val, buffer_len - val);
     return val;
 }
 
@@ -532,6 +535,7 @@ int socket_send_message_custom(socket_t *soc, void *buffer, size_t buffer_len, i
     total_sent = 0;
 
     terminate:
+    REPORT("Message data sent: %d\n", total_sent);
     return total_sent;
 }
 

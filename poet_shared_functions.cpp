@@ -1,3 +1,4 @@
+#include <set>
 #include "poet_shared_functions.h"
 
 #define JSON_ERROR_LEN 30
@@ -377,6 +378,37 @@ static int comp_address(const void *a, const void *b) {
     }
 }
 
+static thread_local int old_cancelable_state;
+static thread_local std::set<void *> locks_locked;
+
+static void set_lock(void * lock) {
+    assertp(locks_locked.count(lock) == 0); /* if this is false, there exists definitely a deadlock*/
+
+    if (locks_locked.empty()) {
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_cancelable_state);
+    } else {
+        int dummy;
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &dummy);
+        assertp(dummy == PTHREAD_CANCEL_DISABLE); /* If there is a lock already acquired in this thread, this should always be true */
+    }
+
+    locks_locked.insert(lock);
+}
+
+static void unset_lock(void * lock) {
+    if (locks_locked.count(lock) == 0) {
+        WARN("This lock was not acquired previously: %p\n", lock);
+    } else {
+        locks_locked.erase(lock);
+    }
+
+    if (locks_locked.empty()) {
+        /* Should only be un-cancelable if there are not locks acquired in this thread */
+        int dummy;
+        pthread_setcancelstate(old_cancelable_state, &dummy);
+    }
+}
+
 int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...) {
     assert(locks > 0);
     auto locks_list = (pthread_rwlock_t **) calloc(locks, sizeof(pthread_rwlock_t *));
@@ -387,7 +419,7 @@ int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...
 
     va_list locks_ptr;
     va_start(locks_ptr, wait_time);
-    for(uint i = 0; i < locks; i++) {
+    for(int i = 0; i < locks; i++) {
         locks_list[i] = va_arg(locks_ptr, pthread_rwlock_t*);
     }
     va_end(locks_ptr);
@@ -406,6 +438,7 @@ int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...
         t.tv_sec += time(nullptr);
         ERR("time wait for lock: %ld\n", t.tv_sec);
         int errnum;
+        set_lock((void *) locks_list[i]);
         errnum = rwlock_func(locks_list[i], &t);
         WARN("locked wrlock (rw:%d): %p (errnum:%d)\n", rw, locks_list[i], errnum);
         if (errnum == EDEADLK) {
@@ -414,6 +447,7 @@ int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...
         }
         if (errnum != 0 && errnum != EDEADLK) {
             locked = false;
+            unset_lock((void *) locks_list[i]);
         }
         errv = errnum;
     }
@@ -423,6 +457,7 @@ int nrwlock_timedxlocks(int rw, int locks, const struct timespec *wait_time, ...
         i--; // the last one could no be locked
         for(; i >= 0; i--) {
             pthread_rwlock_unlock(locks_list[i]);
+            unset_lock((void *) locks_list[i]);
         }
     }
 
@@ -456,6 +491,7 @@ int nrwlock_xlocks(int rw, int locks, ...) {
     int (*rwlock_func)(pthread_rwlock_t *) = (rw ? pthread_rwlock_wrlock : pthread_rwlock_rdlock);
     for(i = 0; i < locks && locked; i++) {
         int errnum;
+        set_lock((void *) locks_list[i]);
         errnum = rwlock_func(locks_list[i]);
         WARN("locked rwlock (rw:%d): %p (errnum:%d)\n", rw, locks_list[i], errnum);
         if (errnum == EDEADLK) {
@@ -464,6 +500,7 @@ int nrwlock_xlocks(int rw, int locks, ...) {
         }
         if (errnum != 0 && errnum != EDEADLK) {
             locked = false;
+            unset_lock((void *) locks_list[i]);
         }
         errv = errnum;
     }
@@ -473,6 +510,7 @@ int nrwlock_xlocks(int rw, int locks, ...) {
         i--; // the last one could no be locked
         for(; i >= 0; i--) {
             pthread_rwlock_unlock(locks_list[i]);
+            unset_lock((void *) locks_list[i]);
         }
     }
 
@@ -503,6 +541,7 @@ int nrwlock_unlocks(int locks, ...) {
     int errv = 0;
     for(int i = locks-1; i >= 0; i--) {
         int errnum = pthread_rwlock_unlock(locks_list[i]);
+        unset_lock((void *) locks_list[i]);
         if (errnum != 0) {
             ERROR("Could not unlock lock: %p (errnum:%d)\n", locks_list[i], errnum);
         }
@@ -542,7 +581,11 @@ int nmutex_locks(int locks, ...) {
     int errv = errno;
     for(i = 0; i < locks && locked; i++) {
         ERRR("Locking lock at %p\n", locks_list[i]);
+        set_lock((void *) locks_list[i]);
         locked = locked && pthread_mutex_lock(locks_list[i]) == 0;
+        if (!locked) {
+            unset_lock((void *) locks_list[i]);
+        }
         WARN("locked mutex lock: %p\n", locks_list[i]);
         errv = errno;
     }
@@ -552,6 +595,7 @@ int nmutex_locks(int locks, ...) {
         i--; // the last one could no be locked
         for(; i >= 0; i--) {
             pthread_mutex_unlock(locks_list[i]);
+            unset_lock((void *) locks_list[i]);
         }
     }
 
@@ -585,6 +629,7 @@ int nmutex_unlocks(int locks, ...) {
     for(int i = locks-1; i >= 0; i--) {
         ERRR("Unlocking lock at %p\n", locks_list[i]);
         int errnum = pthread_mutex_unlock(locks_list[i]);
+        unset_lock((void *) locks_list[i]);
         if (errnum != 0) {
             ERROR("Could not unlock lock: %p\n", locks_list[i]);
         }

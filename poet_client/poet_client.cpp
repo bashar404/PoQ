@@ -34,6 +34,7 @@
 
 #define BLOCKCHAIN_FILE "blockchain.dat"
 #define BLOCKCHAIN_WRITE_TIME 1 /* change */
+#define PREEMPTIVE_LEADERSHIP_CLAIM_TIME 2 /* seconds */
 
 int should_terminate = 0;
 char *server_ip = nullptr;
@@ -619,7 +620,7 @@ static void *blockchain_work(void *arg) { // thread 4
     time_tm = *localtime(&curr_time);
     strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
 
-    fprintf(f, "Node %u starts writing at %s (%lu)\n", node_id, buf, curr_time);
+    fprintf(f, "Node %u starts   writing at [%15lu] %s\n", node_id, curr_time - server_starting_time, buf);
 
     sleep(execution_time);
 //    get_input_from_user_and_write(f);
@@ -627,15 +628,16 @@ static void *blockchain_work(void *arg) { // thread 4
     curr_time = time(nullptr);
     time_tm = *localtime(&curr_time);
     strftime(buf, sizeof(buf), "%a %Y-%m-%d %H:%M:%S %Z", &time_tm);
-    fprintf(f, "Node %u finishes writing at %s (%lu)\n", node_id, buf, curr_time);
+    fprintf(f, "Node %u finishes writing at [%15lu] %s\n", node_id, time(nullptr) - server_starting_time, buf);
 
-    flock(fileno(f), LOCK_UN); // unlocks file
+    flock(fileno(f), LOCK_UN); /* unlocks file */
     fclose(f);
 
     rejoin_state++;
     pthread_cond_signal(&rejoin_cond.cond);
 
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
+    pthread_exit(nullptr);
 }
 
 static void *starting_time_calculation(void *arg) { // thread 3
@@ -701,16 +703,23 @@ static void *starting_time_calculation(void *arg) { // thread 3
         }
     }
 
-    sleep(leadership_time - curr_time);
+    assert(leadership_time >= curr_time);
+    int wait = std::max(leadership_time - curr_time - PREEMPTIVE_LEADERSHIP_CLAIM_TIME, (long) 0);
+
+    sleep(wait);
 
     /* ****** BECOMES LEADER ****** */
-
     pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &oldstate);
+
+    /* In this time window there should not be any interruptions for the node to become leader at this point */
+    if (wait >= PREEMPTIVE_LEADERSHIP_CLAIM_TIME) {
+        sleep(PREEMPTIVE_LEADERSHIP_CLAIM_TIME);
+    }
+
     pthread_create(&blockchain_writer_thread, nullptr, blockchain_work, (void *) (BLOCKCHAIN_WRITE_TIME));
     pthread_detach(blockchain_writer_thread);
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
-
     INFO("Started blockchain write job at: %s (%lu)\n", "[PENDING]", time(nullptr));
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 
     pthread_exit(nullptr);
 }
@@ -812,6 +821,8 @@ int main(int argc, char *argv[]) {
     bool state = true;
     assertp(poet_register_to_server());
     assertp(setup_secondary_socket());
+
+    REPORT("I am node %d\n", node_id);
 
     pthread_t notifications_checker_thread;
     assertp(pthread_create(&notifications_checker_thread, nullptr, notifications_sentinel, nullptr) == 0);

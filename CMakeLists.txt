@@ -43,13 +43,13 @@ else()
 endif()
 
 add_executable(poet_main
-        POET++.cpp socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp
+        POET++.cpp poet_common_definitions.c socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp
         json-parser/json.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 target_link_libraries(poet_main m pthread)
 
 add_executable(poet_test
         poet_methods_test.cpp
-        socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp poet_shared_functions.cpp
+        poet_common_definitions.c socket_t.c queue_t.c poet_shared_functions.cpp general_structs.cpp poet_shared_functions.cpp
         json-parser/json.c JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 target_link_libraries(poet_test m pthread)
 
@@ -58,7 +58,7 @@ target_link_libraries(poet_test m pthread)
 set(EDL_SEARCH_PATHS poet_client/enclave)
 set(E_SRCS poet_client/enclave/enclave.c)
 set(LDS poet_client/enclave/enclave.lds)
-set(GENERAL_SRCS poet_client/poet_client.cpp socket_t.c queue_t.c
+set(GENERAL_SRCS poet_client/poet_client.cpp poet_common_definitions.c socket_t.c queue_t.c
         poet_shared_functions.cpp general_structs.cpp json-parser/json.c
         JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 set(SRCS ${GENERAL_SRCS} poet_client/enclave_helper.c)
@@ -76,7 +76,7 @@ endif ()
 # --------------- SERVER ---------------------
 
 add_executable(poet_server
-        poet_server.cpp socket_t.c queue_t.c
+        poet_common_definitions.c poet_server.cpp socket_t.c queue_t.c
         poet_shared_functions.cpp general_structs.cpp json-parser/json.c poet_server_functions.cpp
         JSON-c/JSON_checker.c JSON-c/utf8_decode.c JSON-c/utf8_to_utf16.c)
 target_link_libraries(poet_server m pthread)
