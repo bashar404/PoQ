@@ -160,6 +160,11 @@ static int poet_remote_attestation_to_server() {
         json_value_free(json);
     }
 
+    if (buffer != nullptr) {
+        free(buffer);
+        buffer = nullptr;
+    }
+
 #else
 
     // TODO: Remote attestation
@@ -203,8 +208,11 @@ static int poet_register_with_pk() {
     state = socket_send_message(node_socket, buffer, len);
 
     free(buffer);
+    buffer = nullptr;
     free(pk_64base);
+    pk_64base = nullptr;
     free(sign_64base);
+    sign_64base = nullptr;
 
     state = socket_get_message(node_socket, (void **) (&buffer), &len) > 0;
     state = state && check_json_compliance(buffer, len);
@@ -245,6 +253,11 @@ static int poet_register_with_pk() {
     }
 
     json_value_free(json);
+
+    if (buffer != nullptr) {
+        free(buffer);
+        buffer = nullptr;
+    }
 
     first_time = false;
     return state;
@@ -455,6 +468,10 @@ static bool update_sgx_table_and_queue_from_txt(char *buffer, size_t len) {
         mutex_unlocks(&sgx_table_lock, &queue_lock);
     }
 
+    if (json != nullptr) {
+        json_value_free(json);
+    }
+
     ERR("sgx table and queue was updated: %d\n", state);
 
     return state;
@@ -600,7 +617,7 @@ static bool notify_readdition_of_node_into_queue(int time_left) {
 
 static bool notify_leadership_of_node() {
     // TODO
-    ERROR("method not implemented\n");
+    ERR("This method is not going to be implemented\n");
 }
 
 static void *blockchain_work(void *arg) { // thread 4
@@ -716,8 +733,8 @@ static void *starting_time_calculation(void *arg) { // thread 3
         sleep(PREEMPTIVE_LEADERSHIP_CLAIM_TIME);
     }
 
-    pthread_create(&blockchain_writer_thread, nullptr, blockchain_work, (void *) (BLOCKCHAIN_WRITE_TIME));
-    pthread_detach(blockchain_writer_thread);
+    bool created = pthread_create(&blockchain_writer_thread, nullptr, blockchain_work, (void *) (BLOCKCHAIN_WRITE_TIME)) == 0;
+    if (created) pthread_detach(blockchain_writer_thread);
     INFO("Started blockchain write job at: %s (%lu)\n", "[PENDING]", time(nullptr));
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &oldstate);
 
@@ -756,6 +773,7 @@ void *notifications_sentinel(void *_) { // thread 2
             ERR("Calling starting time calculation function\n");
             assertp(pthread_create(&starting_time_calculation_thread, nullptr, starting_time_calculation, nullptr) ==
                     0);
+            pthread_detach(starting_time_calculation_thread);
         } else {
             ERR("starting time calculation function is NOT being called\n");
             sleep(1);
